@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>HydroSwing</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="game">
+    <canvas id="canvas"></canvas>
+
+    <!-- Main Menu -->
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <h1 class="title">HYDRO<span>SWING</span></h1>
+        <p class="subtitle">Hold to swing. Release to fly. Stay on the river.</p>
+        <button id="playBtn" class="btn">PLAY</button>
+        <p class="hint">Hold <kbd>Space</kbd> / touch &amp; hold</p>
+      </div>
+    </div>
+
+    <!-- In-game HUD -->
+    <div id="hud" class="hud hidden">
+      <div class="hud-item"><span id="hudDist">0</span><label>m</label></div>
+      <div class="hud-item"><span id="hudSwings">0</span><label>swings</label></div>
+    </div>
+
+    <!-- Game Over -->
+    <div id="gameover" class="overlay hidden">
+      <div class="panel">
+        <h2 class="go-title">RUN OVER</h2>
+        <div class="stats">
+          <div class="stat"><span id="goDist">0</span><label>Distance (m)</label></div>
+          <div class="stat"><span id="goSwings">0</span><label>Swings</label></div>
+          <div class="stat best"><span id="goBest">0</span><label>Best (m)</label></div>
+        </div>
+        <button id="againBtn" class="btn">PLAY AGAIN</button>
+        <p class="hint">Press <kbd>Space</kbd> to restart</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Systems (classic scripts, loaded in dependency order) -->
+  <script src="js/utils.js"></script>
+  <script src="js/effects.js"></script>
+  <script src="js/river.js"></script>
+  <script src="js/swing.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
