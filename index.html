@@ -4,36 +4,53 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>HydroSwing</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=18" />
 </head>
 <body>
   <div id="game">
     <canvas id="canvas"></canvas>
 
-    <!-- Main Menu -->
-    <div id="menu" class="overlay">
-      <div class="panel">
-        <h1 class="title">HYDRO<span>SWING</span></h1>
-        <p class="subtitle">Hold to swing. Release to fly. Stay on the river.</p>
-        <button id="playBtn" class="btn">PLAY</button>
-        <p class="hint">Hold <kbd>Space</kbd> / touch &amp; hold</p>
+    <!-- ============ Landing screen (chrome over the canvas) ============ -->
+    <div id="menu" class="landing">
+      <!-- Top-left: the one and only button -->
+      <button id="settingsBtn" class="glass-btn" aria-label="Settings">⚙</button>
+
+      <!-- Top-right: gems + best distance -->
+      <div class="top-right">
+        <div class="glass-panel"><span class="pi">💎</span><span id="gemCount">0</span></div>
+        <div class="glass-panel"><span class="pi">🏆</span><span id="bestCount">0</span><small>m</small></div>
+      </div>
+
+      <!-- Settings popover -->
+      <div id="settingsPanel" class="glass-panel settings-pop hidden">
+        <div class="set-row"><span>Sound</span><button id="muteBtn" class="toggle">ON</button></div>
+      </div>
+
+      <!-- Logo -->
+      <div class="logo-wrap">
+        <h1 class="logo" data-text="HYDROSWING">HYDRO<span>SWING</span></h1>
+      </div>
+
+      <!-- Start prompt -->
+      <div class="start-wrap">
+        <p class="press-start">PRESS SPACE TO START</p>
       </div>
     </div>
 
-    <!-- In-game HUD -->
-    <div id="hud" class="hud hidden">
+    <!-- ============ In-game HUD ============ -->
+    <div id="hud" class="hud">
       <div class="hud-item"><span id="hudDist">0</span><label>m</label></div>
-      <div class="hud-item"><span id="hudSwings">0</span><label>swings</label></div>
+      <div class="hud-item gem"><span class="pi">💎</span><span id="hudGems">0</span></div>
     </div>
 
-    <!-- Game Over -->
-    <div id="gameover" class="overlay hidden">
-      <div class="panel">
-        <h2 class="go-title">RUN OVER</h2>
+    <!-- ============ Game Over ============ -->
+    <div id="gameover" class="overlay gameover hidden">
+      <h2 class="go-title" data-text="RUN OVER">RUN<span>OVER</span></h2>
+      <div class="go-panel">
         <div class="stats">
-          <div class="stat"><span id="goDist">0</span><label>Distance (m)</label></div>
+          <div class="stat"><span id="goDist">0</span><label>Distance</label></div>
           <div class="stat"><span id="goSwings">0</span><label>Swings</label></div>
-          <div class="stat best"><span id="goBest">0</span><label>Best (m)</label></div>
+          <div class="stat best"><span id="goBest">0</span><label>Best</label></div>
         </div>
         <button id="againBtn" class="btn">PLAY AGAIN</button>
         <p class="hint">Press <kbd>Space</kbd> to restart</p>
@@ -41,14 +58,16 @@
     </div>
   </div>
 
-  <!-- Systems (classic scripts, loaded in dependency order) -->
-  <script src="js/utils.js"></script>
-  <script src="js/effects.js"></script>
-  <script src="js/river.js"></script>
-  <script src="js/swing.js"></script>
-  <script src="js/player.js"></script>
-  <script src="js/camera.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/game.js"></script>
+  <!-- Systems (classic scripts, loaded in dependency order).
+       ?v= cache-buster — bump when shipping JS changes. -->
+  <script src="js/utils.js?v=18"></script>
+  <script src="js/environment.js?v=18"></script>
+  <script src="js/effects.js?v=18"></script>
+  <script src="js/river.js?v=18"></script>
+  <script src="js/swing.js?v=18"></script>
+  <script src="js/player.js?v=18"></script>
+  <script src="js/camera.js?v=18"></script>
+  <script src="js/ui.js?v=18"></script>
+  <script src="js/game.js?v=18"></script>
 </body>
 </html>

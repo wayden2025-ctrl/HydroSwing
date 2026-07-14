@@ -1,10 +1,10 @@
 /* ============================================================
  * ui.js — UIManager
  *
- * Thin wrapper over the DOM overlays (menu, HUD, game over). Keeps
- * all element lookups and screen transitions in one place so the
- * GameManager only deals in high-level calls: showMenu(), showGame(),
- * showGameOver(stats), updateHud().
+ * Thin wrapper over the DOM chrome: the landing screen (logo, press
+ * prompt, glass panels, settings), the in-game HUD, and the game-over
+ * card. The GameManager drives it with high-level calls; all the fade /
+ * launch transitions are CSS, toggled here by class.
  * ========================================================== */
 
 class UIManager {
@@ -13,42 +13,75 @@ class UIManager {
     this.hud = document.getElementById('hud');
     this.gameover = document.getElementById('gameover');
 
-    this.hudDist = document.getElementById('hudDist');
-    this.hudSwings = document.getElementById('hudSwings');
+    // Landing
+    this.gemCount = document.getElementById('gemCount');
+    this.bestCount = document.getElementById('bestCount');
+    this.settingsBtn = document.getElementById('settingsBtn');
+    this.settingsPanel = document.getElementById('settingsPanel');
+    this.muteBtn = document.getElementById('muteBtn');
 
+    // HUD
+    this.hudDist = document.getElementById('hudDist');
+    this.hudGems = document.getElementById('hudGems');
+
+    // Game over
     this.goDist = document.getElementById('goDist');
     this.goSwings = document.getElementById('goSwings');
     this.goBest = document.getElementById('goBest');
-
-    this.playBtn = document.getElementById('playBtn');
     this.againBtn = document.getElementById('againBtn');
+
+    this._hideTimer = null;
   }
 
-  showMenu() {
-    this.menu.classList.remove('hidden');
-    this.hud.classList.add('hidden');
+  /** Show the landing screen (fresh, un-launched). */
+  showMenu(gems, best) {
+    clearTimeout(this._hideTimer);
+    this.menu.classList.remove('hidden', 'launching');
+    this.settingsPanel.classList.add('hidden');
+    this.hud.classList.remove('show');
     this.gameover.classList.add('hidden');
+    this.gemCount.textContent = gems;
+    this.bestCount.textContent = best;
   }
 
+  /** Begin the seamless launch: animate the landing out, fade the HUD in. */
+  launch() {
+    this.menu.classList.add('launching');
+    this.gameover.classList.add('hidden');
+    this.hud.classList.add('show');
+    // Remove the landing from the layout once its fade-out finishes.
+    this._hideTimer = setTimeout(() => this.menu.classList.add('hidden'), 900);
+  }
+
+  /** Straight to gameplay HUD (used for fast retries, no landing anim). */
   showGame() {
+    clearTimeout(this._hideTimer);
     this.menu.classList.add('hidden');
-    this.hud.classList.remove('hidden');
+    this.hud.classList.add('show');
     this.gameover.classList.add('hidden');
   }
 
   showGameOver(stats) {
-    this.hud.classList.add('hidden');
+    this.hud.classList.remove('show');
     this.gameover.classList.remove('hidden');
     this.goDist.textContent = stats.distance;
     this.goSwings.textContent = stats.swings;
     this.goBest.textContent = stats.best;
-    // Re-trigger the pop animation.
-    const panel = this.gameover.querySelector('.panel');
-    panel.classList.remove('pop'); void panel.offsetWidth; panel.classList.add('pop');
+    // Restart the drop-in / rise-in CSS animations (same elements reused).
+    for (const sel of ['.go-title', '.go-panel']) {
+      const el = this.gameover.querySelector(sel);
+      if (!el) continue;
+      el.style.animation = 'none';
+      void el.offsetWidth;      // force reflow
+      el.style.animation = '';
+    }
   }
 
-  updateHud(distance, swings) {
+  updateHud(distance, gems) {
     this.hudDist.textContent = distance;
-    this.hudSwings.textContent = swings;
+    this.hudGems.textContent = gems;
   }
+
+  setMuteLabel(muted) { if (this.muteBtn) this.muteBtn.textContent = muted ? 'OFF' : 'ON'; }
+  toggleSettings() { this.settingsPanel.classList.toggle('hidden'); }
 }

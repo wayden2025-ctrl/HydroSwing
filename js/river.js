@@ -17,7 +17,7 @@
 
 class RiverGenerator {
   constructor() {
-    this.halfWidth = 82;         // distance from centerline to each bank
+    this.halfWidth = 96;         // widest — the game narrows this with distance
     this.sampleStep = 5;         // px between centerline samples
     this.points = [];            // {x, y, nx, ny, s}  (n = left normal, s = arc length)
     this.pivots = [];            // {x, y, r, dir, startS, endS, cleared}
@@ -35,6 +35,12 @@ class RiverGenerator {
     this.s = 0;
     this._sinceTurn = 0;
     this._featureCount = 0;
+
+    // Branching state.
+    this.split = null;             // active fork (see _startSplit)
+    this.ghost = null;             // the NOT-taken path, kept visible until off-screen
+    this._lastSplitS = -99999;
+    this._promotedForkIdx = -1;    // set when a branch is promoted (game resets index)
 
     // Seed with a generous straight so the player can settle in.
     this._pushPoint();
@@ -93,20 +99,36 @@ class RiverGenerator {
   }
 
   /**
-   * Difficulty curve keyed off distance travelled. Straights shrink
-   * and turn radii tighten as the run goes on, but never below a
-   * floor that keeps every layout physically clearable.
+   * SINGLE SOURCE OF TRUTH for progressive difficulty, as a function of
+   * distance travelled `d` (px). Everything — river width, boat speed,
+   * turn radii, straight spacing — is derived here so the game, the
+   * player and the generator all ramp together and stay in balance.
+   *
+   * The ramp is long and smoothstep-eased, so it's nearly invisible from
+   * one section to the next but clearly tighter and faster after a long
+   * run. Floors guarantee fairness: perfect play always traces the
+   * centerline, and these limits keep the banks and spacing beatable.
    */
-  _difficulty() {
-    const t = Utils.clamp(this.s / 26000, 0, 1); // ramps over ~26k px
-    // Turn radii stay comfortably above halfWidth (82) so the inside
-    // bank never collapses into an unfair pinch, even on hairpins.
+  static diff(d) {
+    const raw = Utils.clamp(d / 30000, 0, 1);   // full ramp over ~30k px
+    const t = raw * raw * (3 - 2 * raw);        // smoothstep — gentle at both ends
+
+    const speed = Utils.lerp(340, 470, t);      // capped top speed
     return {
-      straight: Utils.lerp(320, 165, t),
-      minR: Utils.lerp(185, 150, t),
-      maxR: Utils.lerp(275, 185, t),
       t,
+      speed,
+      halfWidth: Utils.lerp(96, 46, t),         // wide -> tight (never impossible)
+      minR: Utils.lerp(210, 150, t),            // stays > halfWidth: inside bank never pinches
+      maxR: Utils.lerp(300, 195, t),
+      // Reaction straight: long at first; late-game floor scales with
+      // speed so there's always ~0.42s of straight to react between turns.
+      straight: Math.max(Utils.lerp(340, 180, t), speed * 0.42),
     };
+  }
+
+  /** Geometry difficulty at the current GENERATION distance. */
+  _difficulty() {
+    return RiverGenerator.diff(this.s);
   }
 
   /** Generate one feature: a straight + a turn (or an S-curve). */
@@ -130,8 +152,11 @@ class RiverGenerator {
     if (d.t > 0.25 && Math.random() < 0.3) {
       const R2 = Utils.rand(d.minR, d.maxR);
       const a2 = Utils.pick([45, 90]) * Utils.DEG;   // S-curve uses the same set
+      // Breather between the two opposite turns — scaled to speed so it
+      // never drops below ~0.3s of reaction even late in a run.
+      const breather = Math.max(120, d.speed * 0.32);
       this._addTurn(R, angle, dir);
-      this._addStraight(Utils.rand(90, 150));
+      this._addStraight(Utils.rand(breather, breather * 1.3));
       this._addTurn(R2, a2, -dir);
     } else {
       this._addTurn(R, angle, dir);
@@ -143,7 +168,160 @@ class RiverGenerator {
   /** Keep generating until the centerline extends past `targetS`. */
   ensureAhead(targetS) {
     let guard = 0;
-    while (this.s < targetS && guard++ < 200) this._nextFeature();
+    while (this.s < targetS && guard++ < 200) {
+      this._maybeStartSplit();
+      this._nextFeature();
+    }
+    // The branch is a fixed non-crossing stub built in _maybeStartSplit;
+    // nothing more to generate on it until it's chosen and promoted.
+  }
+
+  // ============================================================
+  // Branching — a second, FULL-WIDTH river peels away at a fork. The
+  // main keeps going straight (no pivot near the fork) so releasing the
+  // button glides you straight on; the branch has a swing post at the
+  // fork so HOLDING hooks it and swings you onto the branch. The loser
+  // is unloaded once the player has clearly committed.
+  // ============================================================
+
+  _maybeStartSplit() {
+    if (this.split) return;                                    // one fork at a time
+    if (this.s < 3200) return;                                 // let players settle first
+    if (this.s - this._lastSplitS < 4200) return;              // spacing between forks
+    if (Math.random() > 0.32) return;                          // occasional
+
+    const forkIdx = this.points.length - 1;
+    const forkS = this.s, fx = this.cx, fy = this.cy, fh = this.heading;
+
+    // Main continues straight past the fork so its next turn is well away.
+    this._addStraight(Utils.rand(480, 620));
+
+    // Branch peels away with a turn whose ARC ENTRY is the fork, so the
+    // post sits right where the player draws level with it.
+    const d = RiverGenerator.diff(forkS);
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    // Normal turn radius + a modest angle so the branch swing is as
+    // forgiving as any other corner (a tight/steep peel made the fork a
+    // death trap). The short straight stub still separates the channels.
+    const R = Utils.rand(d.minR, d.maxR);
+    const angle = Utils.rand(38, 50) * Utils.DEG;
+    const b = { points: [], pivots: [], cx: fx, cy: fy, heading: fh, s: forkS, featureCount: 3 };
+    this._bPush(b);
+    this._bTurn(b, R, angle, dir);
+    // Then just a straight run — a SHORT, non-crossing stub. Generating a
+    // full winding branch here made it loop back and intersect the main.
+    // Real turns resume once this branch is chosen and promoted.
+    this._bStraight(b, 1100);
+
+    this.split = { forkS, forkIdx, fork: { x: fx, y: fy }, dir, branch: b, locked: null };
+    this._lastSplitS = forkS;
+  }
+
+  // Branch builders (mirror the main ones, operating on a branch object
+  // so the working main generation stays completely untouched).
+  _bPush(b) {
+    const nx = -Math.sin(b.heading), ny = Math.cos(b.heading);
+    b.points.push({ x: b.cx, y: b.cy, nx, ny, s: b.s });
+  }
+  _bStraight(b, length) {
+    const steps = Math.max(1, Math.round(length / this.sampleStep));
+    const dx = Math.cos(b.heading) * this.sampleStep, dy = Math.sin(b.heading) * this.sampleStep;
+    for (let i = 0; i < steps; i++) { b.cx += dx; b.cy += dy; b.s += this.sampleStep; this._bPush(b); }
+  }
+  _bTurn(b, radius, angle, dir) {
+    const nx = -Math.sin(b.heading), ny = Math.cos(b.heading);
+    const cX = b.cx + dir * nx * radius, cY = b.cy + dir * ny * radius;
+    const startPhi = Math.atan2(b.cy - cY, b.cx - cX);
+    const startS = b.s, dPhi = this.sampleStep / radius;
+    const steps = Math.max(1, Math.round(angle / dPhi));
+    for (let i = 0; i < steps; i++) {
+      const phi = startPhi + dir * dPhi * (i + 1);
+      b.cx = cX + Math.cos(phi) * radius; b.cy = cY + Math.sin(phi) * radius;
+      b.s += this.sampleStep; b.heading = phi + dir * Math.PI / 2; this._bPush(b);
+    }
+    b.pivots.push({ x: cX, y: cY, r: radius, dir, startS, endS: b.s, cleared: false });
+  }
+  _bFeature(b) {
+    const d = RiverGenerator.diff(b.s);
+    const angles = b.featureCount < 4 ? [45, 90] : [45, 45, 90, 90, 90, 180];
+    this._bStraight(b, Utils.rand(d.straight * 0.8, d.straight * 1.2));
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const R = Utils.rand(d.minR, d.maxR);
+    const angle = Utils.pick(angles) * Utils.DEG;
+    if (d.t > 0.25 && Math.random() < 0.3) {
+      const R2 = Utils.rand(d.minR, d.maxR), a2 = Utils.pick([45, 90]) * Utils.DEG;
+      const breather = Math.max(120, d.speed * 0.32);
+      this._bTurn(b, R, angle, dir); this._bStraight(b, Utils.rand(breather, breather * 1.3)); this._bTurn(b, R2, a2, -dir);
+    } else { this._bTurn(b, R, angle, dir); }
+    b.featureCount++;
+  }
+
+  /** Pivots the player can currently hook (main + the active branch). */
+  activePivots() {
+    return this.split ? this.pivots.concat(this.split.branch.pivots) : this.pivots;
+  }
+
+  /** Nearest-point query against the branch centerline (short, so a full
+   *  scan is cheap). Returns {offset, s, dist}. */
+  locateBranch(x, y) {
+    const b = this.split && this.split.branch;
+    if (!b || b.points.length < 2) return { offset: 1e9, s: 0, dist: 1e9, tangent: 0 };
+    let best = Infinity, bi = 0, bt = 0;
+    for (let i = 0; i < b.points.length - 1; i++) {
+      const p = b.points[i], q = b.points[i + 1];
+      const abx = q.x - p.x, aby = q.y - p.y, apx = x - p.x, apy = y - p.y;
+      const len2 = abx * abx + aby * aby || 1e-6;
+      const t = Utils.clamp((apx * abx + apy * aby) / len2, 0, 1);
+      const px = p.x + abx * t, py = p.y + aby * t, dd = Math.hypot(x - px, y - py);
+      if (dd < best) { best = dd; bi = i; bt = t; }
+    }
+    const a = b.points[bi], c = b.points[bi + 1];
+    const nx = Utils.lerp(a.nx, c.nx, bt), ny = Utils.lerp(a.ny, c.ny, bt);
+    const px = a.x + (c.x - a.x) * bt, py = a.y + (c.y - a.y) * bt;
+    return { offset: (x - px) * nx + (y - py) * ny, s: Utils.lerp(a.s, c.s, bt), dist: best, tangent: Math.atan2(-nx, ny) };
+  }
+
+  /**
+   * Lock collision to the lane the player has clearly entered. Called
+   * every frame during a fork: once the boat is well past the fork and
+   * one channel is clearly nearer, that channel becomes the only one
+   * that can crash the boat (`split.locked`). This stops the other path's
+   * banks from ever causing an "invisible boundary".
+   */
+  lockSplitLane(mainLoc, branchLoc) {
+    const sp = this.split;
+    if (!sp || sp.locked) return;
+    const past = Math.max(mainLoc.s, branchLoc.s) - sp.forkS;
+    if (past < 300) return;
+    sp.locked = Math.abs(branchLoc.offset) < Math.abs(mainLoc.offset) ? 'branch' : 'main';
+  }
+
+  /**
+   * Finish the fork once it has scrolled off-screen: the chosen lane
+   * becomes the sole river and generation continues on it; the other is
+   * discarded entirely (no lingering path). Returns 'promoted' (took the
+   * branch — indices shifted), 'kept' (stayed on main), or null.
+   */
+  finalizeSplitIfOffscreen(camX, camY) {
+    const sp = this.split;
+    if (!sp) return null;
+    if (!sp.locked) return null;                               // only after we've committed to a lane
+    if (Math.hypot(sp.fork.x - camX, sp.fork.y - camY) < 780) return null; // fork still on-screen
+    if (sp.locked === 'branch') { this._promoteBranch(); return 'promoted'; }
+    this.split = null;                                          // keep main, drop branch
+    return 'kept';
+  }
+
+  _promoteBranch() {
+    const sp = this.split, b = sp.branch;
+    // Replace everything past the fork with the branch.
+    this.points.length = sp.forkIdx + 1;
+    for (let i = 1; i < b.points.length; i++) this.points.push(b.points[i]);
+    this.pivots = this.pivots.filter(p => p.endS <= sp.forkS).concat(b.pivots);
+    // Adopt the branch's cursor so normal generation continues forward.
+    this.cx = b.cx; this.cy = b.cy; this.heading = b.heading; this.s = b.s; this._featureCount = b.featureCount;
+    this._promotedForkIdx = sp.forkIdx;
+    this.split = null;
   }
 
   /** Discard geometry well behind the player to bound memory. */
@@ -166,7 +344,7 @@ class RiverGenerator {
    *   self-crossing river playable: what you see on top is exactly the
    *   lane you collide against.
    */
-  draw(ctx, activeIdx) {
+  draw(ctx, activeIdx, widthBonus = 0, flow = 0) {
     const pts = this.points;
     if (pts.length < 2) return;
     const last = pts.length - 1;
@@ -176,19 +354,64 @@ class RiverGenerator {
     // made older loops show up behind as phantom "extra" boundaries.
     // Limiting to this window means you only ever see one route; the
     // window is wide enough that its ends stay off-screen.
+    //
+    // widthBonus is a RENDER-ONLY inflation used by the launch transition
+    // to slide the banks in from the screen edges (collision always uses
+    // the true halfWidth).
+    const hw = this.halfWidth + widthBonus;
     const a = Utils.clamp((activeIdx | 0) - 130, 0, last);
     const b = Utils.clamp((activeIdx | 0) + 260, 0, last);
-    this._strokePath(ctx, pts, a, b, this.halfWidth + 26, '#3fae5a');
-    this._strokePath(ctx, pts, a, b, this.halfWidth + 10, '#5fd07a');
-    this._strokePath(ctx, pts, a, b, this.halfWidth, '#37b3e6');
+    // Banks themed to the ocean: a deep teal-navy shore with a glowing
+    // aqua rim (matching the landing's cyan accents) around bright water.
+    this._strokePath(ctx, pts, a, b, hw + 26, '#0a3a52');   // outer shore
+    this._strokePath(ctx, pts, a, b, hw + 11, '#4fe3d8');   // glowing aqua rim
+    this._strokePath(ctx, pts, a, b, hw, '#3bb6ea');        // bright water channel
+    this._drawWaterAnim(ctx, pts, a, b, hw, flow);          // flowing foam + current
+  }
 
-    // Subtle current line down the middle.
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(pts[a].x, pts[a].y);
-    for (let i = a + 1; i <= b; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.stroke();
+  /**
+   * Animated water material painted along the river: faint current/flow
+   * lines and brighter white foam streaks, all following the centerline
+   * (so they bend around curves) and scrolling downstream over time.
+   * Because everything is parameterised along the continuous centerline,
+   * it's seamless across segments and inherited by branches for free.
+   * Foam streaks stretch and speed up with `flow` (the boat's speed).
+   */
+  _drawWaterAnim(ctx, pts, i0, i1, hw, flow) {
+    if (i1 - i0 < 2) return;
+    const t = performance.now() / 1000;
+    const scroll = t * (44 + flow * 150);        // downstream scroll, faster with speed
+    const stretch = 1 + flow * 1.6;              // foam elongates with speed
+
+    ctx.lineCap = 'round';
+    const streak = (off, width, color, dash, gap, speedMul) => {
+      ctx.strokeStyle = color; ctx.lineWidth = width;
+      ctx.setLineDash([dash * stretch, gap]);
+      ctx.lineDashOffset = scroll * speedMul;
+      ctx.beginPath();
+      for (let i = i0; i <= i1; i++) {
+        const p = pts[i], x = p.x + p.nx * off, y = p.y + p.ny * off;
+        if (i === i0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    };
+
+    // Faint current / flow lines.
+    streak(-0.56 * hw, 2, 'rgba(190,240,255,0.09)', 30, 46, 1.0);
+    streak(-0.20 * hw, 2, 'rgba(190,240,255,0.08)', 24, 52, 1.1);
+    streak(0.22 * hw, 2, 'rgba(190,240,255,0.08)', 28, 48, 0.95);
+    streak(0.56 * hw, 2, 'rgba(190,240,255,0.09)', 26, 50, 1.05);
+
+    // Brighter white foam streaks.
+    streak(-0.38 * hw, 3.6, 'rgba(255,255,255,0.16)', 46, 150, 1.2);
+    streak(0.34 * hw, 3.6, 'rgba(255,255,255,0.15)', 52, 160, 1.15);
+    streak(0.03 * hw, 3.0, 'rgba(255,255,255,0.12)', 40, 175, 1.25);
+
+    // Sunlight sheen near the middle (flickers).
+    const flick = 0.10 + 0.07 * Math.sin(t * 3);
+    streak(0.0, 2.6, `rgba(215,250,255,${flick})`, 16, 96, 1.4);
+
+    ctx.setLineDash([]);
   }
 
   _strokePath(ctx, pts, i0, i1, width, color) {
@@ -209,26 +432,91 @@ class RiverGenerator {
       // (plus whichever we're attached to), so crossing branches don't
       // spray unreachable posts across the screen.
       if (!active && (p.endS < playerS - 250 || p.startS > playerS + 1500)) continue;
-      ctx.save();
-      ctx.translate(p.x, p.y);
-
-      // Shadow / water disturbance under the buoy.
-      ctx.fillStyle = 'rgba(0,40,70,0.18)';
-      ctx.beginPath(); ctx.arc(2, 3, 12, 0, Utils.TWO_PI); ctx.fill();
-
-      // Buoy body.
-      ctx.fillStyle = active ? '#ffd23f' : '#ff8a3d';
-      ctx.beginPath(); ctx.arc(0, 0, active ? 12 : 10, 0, Utils.TWO_PI); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath(); ctx.arc(-3, -3, 3.5, 0, Utils.TWO_PI); ctx.fill();
-
-      if (active) {
-        ctx.strokeStyle = 'rgba(255,210,63,0.6)';
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(0, 0, 20, 0, Utils.TWO_PI); ctx.stroke();
-      }
-      ctx.restore();
+      this._drawBuoy(ctx, p, active);
     }
+  }
+
+  _drawBuoy(ctx, p, active) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.fillStyle = 'rgba(0,40,70,0.18)';
+    ctx.beginPath(); ctx.arc(2, 3, 12, 0, Utils.TWO_PI); ctx.fill();
+    ctx.fillStyle = active ? '#ffd23f' : '#ff8a3d';
+    ctx.beginPath(); ctx.arc(0, 0, active ? 12 : 10, 0, Utils.TWO_PI); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.arc(-3, -3, 3.5, 0, Utils.TWO_PI); ctx.fill();
+    if (active) {
+      ctx.strokeStyle = 'rgba(255,210,63,0.6)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, 20, 0, Utils.TWO_PI); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Draw a FORK. The trick: paint both channels' shores, then both rims,
+   * then both WATER bodies last. Because the water is drawn on top of all
+   * the banks, the two channels merge cleanly in the shared throat (no
+   * inner bank cutting across the other path) — banks only survive on the
+   * OUTER edges where no water covers them. The island sits in the gap as
+   * the divider. Exactly one continuous split, no overlapping boundaries.
+   */
+  drawForked(ctx, activeIdx, activePivot, flow = 0) {
+    const sp = this.split;
+    if (!sp) return;
+    const pts = this.points, last = pts.length - 1;
+    const a = Utils.clamp((activeIdx | 0) - 130, 0, last);
+    const b = Utils.clamp((activeIdx | 0) + 260, 0, last);
+    const bp = sp.branch.points, blast = bp.length - 1;
+    const hw = this.halfWidth;
+
+    const both = (width, color) => {
+      this._strokePath(ctx, pts, a, b, width, color);
+      if (blast >= 1) this._strokePath(ctx, bp, 0, blast, width, color);
+    };
+    both(hw + 26, '#0a3a52');   // outer shores
+    both(hw + 11, '#4fe3d8');   // aqua rims
+    both(hw, '#3bb6ea');        // water LAST — merges the throat, hides inner banks
+    this._drawWaterAnim(ctx, pts, a, b, hw, flow);
+    if (blast >= 1) this._drawWaterAnim(ctx, bp, 0, blast, hw, flow);
+
+    if (blast >= 1) for (const p of sp.branch.pivots) this._drawBuoy(ctx, p, p === activePivot);
+  }
+
+  /** After committing, keep drawing the not-taken (ghost) path merged
+   *  with the main until it scrolls off-screen — no instant pop. */
+  drawWithGhost(ctx, activeIdx, flow = 0) {
+    const g = this.ghost;
+    if (!g) return;
+    const pts = this.points, last = pts.length - 1;
+    const a = Utils.clamp((activeIdx | 0) - 130, 0, last);
+    const b = Utils.clamp((activeIdx | 0) + 260, 0, last);
+    const gp = g.points, glast = gp.length - 1;
+    const hw = this.halfWidth;
+
+    const both = (width, color) => {
+      this._strokePath(ctx, pts, a, b, width, color);
+      if (glast >= 1) this._strokePath(ctx, gp, 0, glast, width, color);
+    };
+    both(hw + 26, '#0a3a52');   // shores
+    both(hw + 11, '#4fe3d8');   // rims
+    both(hw, '#3bb6ea');        // water last — merged throat, outer banks only
+    this._drawWaterAnim(ctx, pts, a, b, hw, flow);
+    if (glast >= 1) this._drawWaterAnim(ctx, gp, 0, glast, hw, flow);
+  }
+
+  _drawIsland(ctx, is) {
+    ctx.save();
+    ctx.translate(is.x, is.y);
+    ctx.fillStyle = '#123a4a';                         // reef base
+    ctx.beginPath(); ctx.ellipse(0, 0, 42, 32, 0, 0, Utils.TWO_PI); ctx.fill();
+    ctx.fillStyle = '#d9c79a';                         // sandy top
+    ctx.beginPath(); ctx.ellipse(0, -2, 31, 22, 0, 0, Utils.TWO_PI); ctx.fill();
+    ctx.fillStyle = '#4a5a63';                         // rocks
+    ctx.beginPath(); ctx.arc(-9, 2, 7, 0, Utils.TWO_PI); ctx.arc(11, -3, 5.5, 0, Utils.TWO_PI); ctx.fill();
+    ctx.fillStyle = '#2f8f5e';                         // tuft of green
+    ctx.beginPath(); ctx.arc(3, 6, 6.5, 0, Utils.TWO_PI); ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -279,8 +567,11 @@ class RiverBoundarySystem {
     const py = a.y + (b.y - a.y) * bestT;
     const offset = (x - px) * nx + (y - py) * ny;
     const s = Utils.lerp(a.s, b.s, bestT);
+    // Forward tangent of the river here (left normal is (-sin h, cos h),
+    // so the heading down the river is atan2(-nx, ny)).
+    const tangent = Math.atan2(-nx, ny);
 
-    return { offset, s, index: bestIdx };
+    return { offset, s, index: bestIdx, tangent };
   }
 
   /** True if the boat (radius r) is touching or past either bank. */

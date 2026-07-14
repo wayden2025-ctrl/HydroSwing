@@ -43,12 +43,12 @@ class PlayerController {
     this.lean = 0;   // radians, leans into turns
     this.alive = true;
     this._wasHeld = false;
+    this.recoverT = 0;   // >0 = straightening toward the river after a swing
   }
 
-  /** Speed slowly climbs with distance for a rising difficulty curve. */
+  /** Speed slowly climbs with distance — from the shared difficulty curve. */
   setDifficulty(s) {
-    const t = Utils.clamp(s / 26000, 0, 1);
-    this.speed = Utils.lerp(this.baseSpeed, 450, t);
+    this.speed = RiverGenerator.diff(s).speed;
   }
 
   /**
@@ -57,7 +57,9 @@ class PlayerController {
    * @param pivots    candidate pivots from the river
    * @param currentS  boat's current arc-length position on the river
    */
-  update(dt, held, pivots, currentS) {
+  update(dt, held, pivots, currentS, riverTangent) {
+    const wasSwinging = this.swing.swinging;
+
     // --- Input edge handling: attach on press, release on let-go. ---
     if (held && !this.swing.attached) {
       const target = this.swing.findTarget(
@@ -68,14 +70,29 @@ class PlayerController {
       this.swing.release();
     }
 
+    // The instant a swing ends, begin a brief straighten-out: the boat's
+    // exit heading is whatever the orbit tangent was, which is usually NOT
+    // aligned with the river. Recover toward the river's tangent so the
+    // boat never keeps travelling at a diagonal (like a jet ski squaring
+    // up after a turn).
+    if (wasSwinging && !this.swing.swinging) this.recoverT = 0.18;
+
     // --- Integrate motion. ---
     if (this.swing.swinging) {
       // Circular motion around the pivot.
       const s = this.swing.step(dt, this.speed);
       this.x = s.x; this.y = s.y; this.heading = s.heading;
+      this.recoverT = 0;
     } else {
-      // Straight motion. This also covers the tether/dead-zone phase:
-      // hooked but cruising straight until the perpendicular trigger.
+      // While free (not hooked), smoothly rotate the heading toward the
+      // river's forward tangent for the short recovery window, then hold
+      // straight. Movement always follows the (recovered) heading, so the
+      // boat never slides sideways.
+      if (this.recoverT > 0 && !this.swing.attached &&
+          riverTangent !== undefined && isFinite(riverTangent)) {
+        this.heading = Utils.angleLerp(this.heading, riverTangent, 1 - Math.exp(-22 * dt));
+        this.recoverT -= dt;
+      }
       this.x += Math.cos(this.heading) * this.speed * dt;
       this.y += Math.sin(this.heading) * this.speed * dt;
       if (this.swing.attached) {
@@ -83,21 +100,34 @@ class PlayerController {
       }
     }
 
-    // --- Visual feel. ---
+    // --- Visual feel: bob over waves + carve/lean into drifts. ---
+    const inten = this.swing.intensity;
     this.bobPhase += dt * 6;
-    this.bob = Math.sin(this.bobPhase) * 1.6;
-    const targetLean = this.swing.attached ? this.swing.dir * this.swing.intensity * 0.5 : 0;
-    this.lean = Utils.damp(this.lean, targetLean, 8, dt);
+    // Two-frequency bob so it reads as riding chop, not a clean sine.
+    this.bob = Math.sin(this.bobPhase) * 1.5 + Math.sin(this.bobPhase * 2.3 + 1) * 0.7;
+    // Carve: nose points into the turn (rear kicks out) — eased in/out so
+    // it recovers smoothly to upright on the straights.
+    const targetLean = this.swing.swinging ? this.swing.dir * inten * 0.6 : 0;
+    this.lean = Utils.damp(this.lean, targetLean, 7, dt);
 
     // --- Effects hand-off. ---
-    const wakeW = Utils.lerp(5, 9, this.swing.intensity);
-    this.effects.addWake(
-      this.x - Math.cos(this.heading) * 10,
-      this.y - Math.sin(this.heading) * 10,
-      this.heading, wakeW
-    );
-    if (this.swing.intensity > 0.35) {
-      this.effects.addSpray(this.x, this.y, this.heading, this.swing.intensity);
+    const speedK = this.speed / this.baseSpeed;             // faster => more churn
+    const sternX = this.x - Math.cos(this.heading) * 11;
+    const sternY = this.y - Math.sin(this.heading) * 11;
+
+    // Foam ribbon follows the exact path, widening with drift intensity.
+    this.effects.addWake(sternX, sternY, this.heading, Utils.lerp(4.5, 9, inten));
+
+    // Constant light churn + mist at the stern; more at speed.
+    this.effects.emitFoam(sternX, sternY, this.heading, inten > 0.3 ? 3 : 1);
+    this.effects.emitMist(sternX, sternY, this.heading, 0.3 * speedK + inten);
+
+    // Centrifugal spray sheets during a drift, thrown to the OUTSIDE.
+    if (this.swing.swinging && inten > 0.1) {
+      const p = this.swing.pivot;
+      let ox = this.x - p.x, oy = this.y - p.y;         // outward = away from pivot
+      const m = Math.hypot(ox, oy) || 1; ox /= m; oy /= m;
+      this.effects.emitSpray(this.x + ox * 6, this.y + oy * 6, ox, oy, this.heading, inten * speedK);
     }
   }
 

@@ -1,8 +1,9 @@
 :root {
-  --water: #29a3d6;
-  --water-deep: #1c7fb0;
+  --navy: #061A2F;
+  --teal: #0F6E8C;
+  --cyan: #35e0ff;
   --accent: #ff8a3d;
-  --ink: #08344a;
+  --ink: #06263a;
   --panel: rgba(255, 255, 255, 0.92);
 }
 
@@ -12,7 +13,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--water-deep);
+  background: var(--navy);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-user-select: none;
   user-select: none;
@@ -21,93 +22,228 @@ html, body {
 }
 
 #game { position: fixed; inset: 0; }
-
 #canvas { display: block; width: 100%; height: 100%; }
 
-/* ---------- Overlays (menu / game over) ---------- */
-.overlay {
+.hidden { display: none !important; }
+
+/* ============================================================
+   Landing screen
+   ============================================================ */
+.landing {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 10;
-  animation: fade 0.25s ease;
+  pointer-events: none;          /* taps pass through to canvas (start) */
+  transition: opacity 0.5s ease;
 }
-.overlay.hidden { display: none; }
+.landing > * { pointer-events: auto; }
 
-.panel {
-  background: var(--panel);
-  backdrop-filter: blur(8px);
-  border-radius: 28px;
-  padding: 40px 44px;
-  text-align: center;
-  box-shadow: 0 24px 60px rgba(0, 40, 70, 0.35);
-  max-width: 90vw;
-}
-
-.title {
-  font-size: clamp(44px, 12vw, 84px);
-  font-weight: 900;
-  letter-spacing: -2px;
-  color: var(--ink);
-  line-height: 0.9;
-}
-.title span { display: block; color: var(--accent); }
-
-.subtitle {
-  margin: 16px 0 28px;
-  color: #4a6b7d;
-  font-size: clamp(14px, 3.4vw, 18px);
-  max-width: 320px;
-}
-
-.btn {
-  appearance: none;
-  border: none;
+/* ---- Settings gear (top-left, the only button) ---- */
+.glass-btn {
+  position: absolute;
+  top: 20px; left: 20px;
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #eafcff;
+  background: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(120, 240, 255, 0.45);
+  border-radius: 16px;
+  box-shadow: 0 6px 20px rgba(0, 20, 40, 0.35), inset 0 1px 0 rgba(255,255,255,0.2);
   cursor: pointer;
-  background: linear-gradient(180deg, var(--accent), #f0741f);
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.glass-btn:active { transform: scale(0.92); }
+
+/* ---- Glass panels (top-right: gems + best) ---- */
+.top-right {
+  position: absolute;
+  top: 20px; right: 20px;
+  display: flex; gap: 10px;
+}
+.glass-panel {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  color: #eafcff; font-weight: 800; font-size: 18px;
+  background: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(120, 240, 255, 0.40);
+  border-radius: 16px;
+  box-shadow: 0 6px 20px rgba(0, 20, 40, 0.35), inset 0 1px 0 rgba(255,255,255,0.18);
+}
+.glass-panel .pi { font-size: 18px; filter: drop-shadow(0 0 6px rgba(53,224,255,0.5)); }
+.glass-panel small { font-size: 12px; opacity: 0.7; font-weight: 600; margin-left: -3px; }
+
+.settings-pop {
+  position: absolute;
+  top: 78px; left: 20px;
+  flex-direction: column; align-items: stretch;
+  min-width: 170px;
+}
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
+.toggle {
+  border: 1px solid rgba(120,240,255,0.5); background: rgba(53,224,255,0.16);
+  color: #eafcff; font-weight: 800; border-radius: 10px; padding: 5px 14px; cursor: pointer;
+}
+
+/* ---- Logo ---- */
+.logo-wrap {
+  position: absolute;
+  top: 12%; left: 0; right: 0;
+  display: flex; justify-content: center;
+  transition: transform 0.9s cubic-bezier(0.5, 0, 0.2, 1), opacity 0.8s ease;
+}
+.logo {
+  font-size: clamp(46px, 13vw, 104px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -2px;
+  line-height: 0.86;
+  text-align: center;
+  transform: skewX(-7deg);
+  background: linear-gradient(160deg, #2b8fff 0%, #35e0ff 45%, #9dfff0 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  -webkit-text-stroke: 2px rgba(255, 255, 255, 0.92);
+  filter: drop-shadow(0 4px 10px rgba(0, 20, 40, 0.5)) drop-shadow(0 0 22px rgba(53, 224, 255, 0.55));
+  animation: logoFloat 4s ease-in-out infinite;
+}
+.logo span { display: block; }
+@keyframes logoFloat {
+  0%, 100% { transform: skewX(-7deg) translateY(0); }
+  50%      { transform: skewX(-7deg) translateY(-8px); }
+}
+
+/* ---- Press Start ---- */
+.start-wrap {
+  position: absolute;
+  left: 0; right: 0; bottom: 20%;
+  display: flex; justify-content: center;
+  transition: opacity 0.4s ease;
+}
+.press-start {
+  position: relative;
+  font-family: "Arial Narrow", "Helvetica Neue", sans-serif;
+  font-weight: 800; font-size: clamp(18px, 5vw, 26px);
+  letter-spacing: 4px; text-transform: uppercase;
   color: #fff;
-  font-size: clamp(20px, 5vw, 26px);
-  font-weight: 800;
-  letter-spacing: 1px;
-  padding: 16px 56px;
-  border-radius: 999px;
-  box-shadow: 0 10px 24px rgba(255, 120, 40, 0.45);
-  transition: transform 0.08s ease, box-shadow 0.2s ease;
+  text-shadow: 0 0 14px rgba(53, 224, 255, 0.85), 0 2px 6px rgba(0, 20, 40, 0.5);
+  animation: pressPulse 2.4s ease-in-out infinite;
 }
-.btn:active { transform: translateY(3px) scale(0.98); box-shadow: 0 4px 12px rgba(255, 120, 40, 0.4); }
-
-.hint { margin-top: 20px; color: #7a94a3; font-size: 13px; }
-kbd {
-  background: #e6eef2; border-radius: 6px; padding: 2px 8px;
-  font-family: inherit; font-weight: 700; color: var(--ink);
+.press-start::after {
+  content: ""; position: absolute; inset: -14px -30px; border-radius: 999px;
+  border: 2px solid rgba(53, 224, 255, 0.55);
+  opacity: 0; animation: pressRipple 3.2s ease-out infinite;
+}
+@keyframes pressPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.98); }
+  50%      { opacity: 1;    transform: scale(1.03); }
+}
+@keyframes pressRipple {
+  0%   { opacity: 0.6; transform: scale(0.7); }
+  70%  { opacity: 0;   transform: scale(1.25); }
+  100% { opacity: 0;   transform: scale(1.25); }
 }
 
-/* ---------- Game Over ---------- */
-.go-title { font-size: clamp(30px, 8vw, 48px); font-weight: 900; color: var(--ink); letter-spacing: -1px; }
-.stats { display: flex; gap: 14px; margin: 26px 0; justify-content: center; }
-.stat {
-  display: flex; flex-direction: column; align-items: center;
-  background: #eef5f8; border-radius: 16px; padding: 14px 18px; min-width: 84px;
-}
-.stat span { font-size: 30px; font-weight: 900; color: var(--ink); }
-.stat label { font-size: 11px; color: #7a94a3; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-.stat.best span { color: var(--accent); }
+/* ---- Launch transition: logo lifts + fades, prompt fades, panels fade ---- */
+.landing.launching .logo-wrap { transform: translateY(-140px); opacity: 0; }
+.landing.launching .start-wrap { opacity: 0; }
+.landing.launching .glass-btn,
+.landing.launching .top-right,
+.landing.launching .settings-pop { opacity: 0; transition: opacity 0.4s ease; pointer-events: none; }
 
-/* ---------- HUD ---------- */
+/* ============================================================
+   HUD
+   ============================================================ */
 .hud {
   position: absolute; top: 0; left: 0; right: 0;
   display: flex; justify-content: space-between;
   padding: 22px 26px; z-index: 5; pointer-events: none;
+  opacity: 0; transition: opacity 0.6s ease;
 }
-.hud.hidden { display: none; }
-.hud-item { text-align: left; text-shadow: 0 2px 6px rgba(0, 40, 70, 0.4); }
+.hud.show { opacity: 1; }
+.hud-item { text-align: left; text-shadow: 0 2px 8px rgba(0, 20, 40, 0.5); display: flex; align-items: baseline; gap: 4px; }
 .hud-item span { font-size: 34px; font-weight: 900; color: #fff; }
-.hud-item label { font-size: 13px; color: rgba(255, 255, 255, 0.85); margin-left: 4px; }
-.hud-item:last-child { text-align: right; }
+.hud-item label { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.hud-item.gem { align-items: center; }
+.hud-item.gem .pi { font-size: 22px; filter: drop-shadow(0 0 6px rgba(53,224,255,0.6)); }
+
+/* ============================================================
+   Game Over  (ocean-themed, glassmorphism)
+   ============================================================ */
+.overlay {
+  position: absolute; inset: 0; z-index: 12;
+  display: flex; align-items: center; justify-content: center;
+}
+.gameover {
+  flex-direction: column; gap: 30px;
+  /* Deep ocean scrim so the panel reads over the water. */
+  background: radial-gradient(120% 90% at 50% 40%, rgba(6, 26, 47, 0.35), rgba(3, 14, 26, 0.72));
+  animation: fade 0.25s ease;
+}
+
+/* Giant logo-style title that drops in from the top and bounces to size. */
+.go-title {
+  font-size: clamp(52px, 15vw, 118px);
+  font-weight: 900; font-style: italic; letter-spacing: -2px; line-height: 0.84;
+  text-align: center;
+  transform: skewX(-7deg);
+  background: linear-gradient(160deg, #2b8fff 0%, #35e0ff 45%, #9dfff0 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  -webkit-text-stroke: 2px rgba(255, 255, 255, 0.92);
+  filter: drop-shadow(0 6px 14px rgba(0, 20, 40, 0.55)) drop-shadow(0 0 26px rgba(53, 224, 255, 0.6));
+  animation: runOverDrop 1s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.go-title span { display: block; }
+
+@keyframes runOverDrop {
+  0%   { transform: skewX(-7deg) translateY(-120vh) scale(2.6); opacity: 0; }
+  45%  { transform: skewX(-7deg) translateY(0)       scale(2.4); opacity: 1; } /* lands, big */
+  62%  { transform: skewX(-7deg) translateY(16px)    scale(0.82); }            /* squash */
+  76%  { transform: skewX(-7deg) translateY(-7px)    scale(1.14); }            /* rebound */
+  88%  { transform: skewX(-7deg) translateY(2px)     scale(0.95); }
+  100% { transform: skewX(-7deg) translateY(0)       scale(1); }
+}
+
+/* Frosted glass stats/actions panel. */
+.go-panel {
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(10, 32, 54, 0.55);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(120, 240, 255, 0.35);
+  border-radius: 26px; padding: 28px 34px 30px;
+  box-shadow: 0 24px 60px rgba(0, 12, 26, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  animation: panelRise 0.5s 0.35s cubic-bezier(0.2, 1.2, 0.35, 1) both;
+}
+@keyframes panelRise {
+  from { transform: translateY(26px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.stats { display: flex; gap: 12px; margin-bottom: 24px; justify-content: center; }
+.stat {
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(120, 240, 255, 0.22);
+  border-radius: 16px; padding: 14px 18px; min-width: 88px;
+}
+.stat span { font-size: 30px; font-weight: 900; color: #eafcff; text-shadow: 0 0 14px rgba(53, 224, 255, 0.35); }
+.stat label { font-size: 11px; color: #7fb6cc; margin-top: 5px; text-transform: uppercase; letter-spacing: 0.6px; }
+.stat.best span { color: #6bf0d8; text-shadow: 0 0 16px rgba(79, 227, 216, 0.5); }
+
+.btn {
+  appearance: none; border: none; cursor: pointer;
+  background: linear-gradient(180deg, #45e6ff, #1aa6d6);
+  color: #052433; font-size: clamp(20px, 5vw, 26px); font-weight: 800; letter-spacing: 1px;
+  padding: 15px 54px; border-radius: 999px;
+  box-shadow: 0 10px 26px rgba(30, 170, 220, 0.55), inset 0 1px 0 rgba(255,255,255,0.4);
+  transition: transform 0.08s ease;
+}
+.btn:active { transform: translateY(3px) scale(0.98); }
+.hint { margin-top: 18px; color: #7fb6cc; font-size: 13px; }
+kbd { background: rgba(120, 240, 255, 0.16); border: 1px solid rgba(120,240,255,0.3); border-radius: 6px; padding: 2px 8px; font-family: inherit; font-weight: 700; color: #eafcff; }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-
 .pop { animation: pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
 @keyframes pop { 0% { transform: scale(0.7); } 100% { transform: scale(1); } }
