@@ -224,12 +224,13 @@ html, body {
 
 /* Frosted glass stats/actions panel. */
 .go-panel {
+  position: relative;
   display: flex; flex-direction: column; align-items: center;
-  background: rgba(10, 32, 54, 0.55);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(120, 240, 255, 0.35);
-  border-radius: 26px; padding: 28px 34px 30px;
-  box-shadow: 0 24px 60px rgba(0, 12, 26, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(12, 40, 66, 0.72), rgba(6, 22, 40, 0.78));
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(120, 240, 255, 0.30);
+  border-radius: 28px; padding: 30px 40px 26px; min-width: min(340px, 84vw);
+  box-shadow: 0 24px 70px rgba(0, 12, 26, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.14);
   animation: panelRise 0.5s 0.35s cubic-bezier(0.2, 1.2, 0.35, 1) both;
 }
 @keyframes panelRise {
@@ -237,16 +238,45 @@ html, body {
   to   { transform: translateY(0); opacity: 1; }
 }
 
-.stats { display: flex; gap: 12px; margin-bottom: 24px; justify-content: center; }
-.stat {
-  display: flex; flex-direction: column; align-items: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(120, 240, 255, 0.22);
-  border-radius: 16px; padding: 14px 18px; min-width: 88px;
+/* NEW BEST ribbon */
+.go-newbest {
+  position: absolute; top: -14px;
+  padding: 5px 18px; border-radius: 999px;
+  font-size: 12px; font-weight: 900; letter-spacing: 2px; color: #052433;
+  background: linear-gradient(180deg, #8affe0, #35e0c0);
+  box-shadow: 0 6px 18px rgba(53, 224, 192, 0.6);
+  animation: newbestPulse 1s ease-in-out infinite;
 }
-.stat span { font-size: 30px; font-weight: 900; color: #eafcff; text-shadow: 0 0 14px rgba(53, 224, 255, 0.35); }
-.stat label { font-size: 11px; color: #7fb6cc; margin-top: 5px; text-transform: uppercase; letter-spacing: 0.6px; }
-.stat.best span { color: #6bf0d8; text-shadow: 0 0 16px rgba(79, 227, 216, 0.5); }
+@keyframes newbestPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+
+/* Hero distance */
+.go-hero { text-align: center; margin: 6px 0 4px; }
+.go-dist {
+  display: flex; align-items: baseline; justify-content: center; gap: 4px;
+  font-weight: 900; line-height: 1;
+  color: #f2fdff;
+  text-shadow: 0 0 26px rgba(53, 224, 255, 0.55), 0 3px 10px rgba(0, 20, 40, 0.5);
+}
+.go-dist span { font-size: clamp(58px, 17vw, 92px); font-variant-numeric: tabular-nums; }
+.go-dist em { font-style: normal; font-size: clamp(20px, 6vw, 30px); font-weight: 800; color: #6fd6ff; }
+.go-heroLabel {
+  margin-top: 2px; font-size: 12px; font-weight: 800; letter-spacing: 4px;
+  text-transform: uppercase; color: #7fb6cc;
+}
+
+/* Best line */
+.go-best {
+  display: flex; align-items: center; gap: 8px;
+  margin: 16px 0 22px; padding: 9px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(120, 240, 255, 0.22); border-radius: 999px;
+}
+.go-best .ico { width: 17px; height: 17px; filter: drop-shadow(0 0 5px rgba(107, 240, 216, 0.6)); }
+.go-bestLabel { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #7fb6cc; }
+.go-best b { font-size: 20px; font-weight: 900; color: #6bf0d8; font-variant-numeric: tabular-nums; }
+.go-best i { font-style: normal; font-size: 13px; color: #4f9aa8; margin-left: -3px; }
+
+.go-actions { display: flex; flex-direction: column; align-items: center; width: 100%; }
 
 .btn {
   appearance: none; border: none; cursor: pointer;

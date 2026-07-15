@@ -277,14 +277,15 @@ class GameManager {
 
   gameOver() {
     this.state = STATE.OVER;
-    if (this.distance > this.best) {
+    const newBest = this.distance > this.best;
+    if (newBest) {
       this.best = this.distance;
       localStorage.setItem('hydroswing_best', String(this.best));
     }
     // Bank the gems earned this run into the lifetime total.
     this.gems += this.gemsRun;
     localStorage.setItem('hydroswing_gems', String(this.gems));
-    this.ui.showGameOver({ distance: this.distance, swings: this.swings, best: this.best });
+    this.ui.showGameOver({ distance: this.distance, best: this.best, newBest });
   }
 
   // ------------------------------------------------------------------

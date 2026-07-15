@@ -26,10 +26,11 @@ class UIManager {
 
     // Game over
     this.goDist = document.getElementById('goDist');
-    this.goSwings = document.getElementById('goSwings');
     this.goBest = document.getElementById('goBest');
+    this.goNewBest = document.getElementById('goNewBest');
     this.againBtn = document.getElementById('againBtn');
     this.homeBtn = document.getElementById('homeBtn');
+    this._countRAF = null;
 
     this._scoreGems = document.querySelector('.score-gems');
     this._hideTimer = null;
@@ -73,9 +74,12 @@ class UIManager {
   showGameOver(stats) {
     this.hud.classList.remove('show');
     this.gameover.classList.remove('hidden');
-    this.goDist.textContent = stats.distance;
-    this.goSwings.textContent = stats.swings;
     this.goBest.textContent = stats.best;
+    this.goNewBest.classList.toggle('hidden', !stats.newBest);
+
+    // Count the distance up for a satisfying, arcade-style reveal.
+    this._countUp(this.goDist, stats.distance, 700);
+
     // Restart the drop-in / rise-in CSS animations (same elements reused).
     for (const sel of ['.go-title', '.go-panel']) {
       const el = this.gameover.querySelector(sel);
@@ -84,6 +88,19 @@ class UIManager {
       void el.offsetWidth;      // force reflow
       el.style.animation = '';
     }
+  }
+
+  _countUp(el, target, ms) {
+    cancelAnimationFrame(this._countRAF);
+    const start = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / ms);
+      const eased = 1 - Math.pow(1 - t, 3);           // ease-out
+      el.textContent = Math.round(target * eased);
+      if (t < 1) this._countRAF = requestAnimationFrame(step);
+      else el.textContent = target;
+    };
+    this._countRAF = requestAnimationFrame(step);
   }
 
   updateHud(distance, gems) {

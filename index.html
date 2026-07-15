@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>HydroSwing</title>
-  <link rel="stylesheet" href="styles.css?v=48" />
+  <link rel="stylesheet" href="styles.css?v=49" />
 </head>
 <body>
   <div id="game">
@@ -51,13 +51,25 @@
     <div id="gameover" class="overlay gameover hidden">
       <h2 class="go-title" data-text="RUN OVER">RUN<span>OVER</span></h2>
       <div class="go-panel">
-        <div class="stats">
-          <div class="stat"><span id="goDist">0</span><label>Distance</label></div>
-          <div class="stat"><span id="goSwings">0</span><label>Swings</label></div>
-          <div class="stat best"><span id="goBest">0</span><label>Best</label></div>
+        <span id="goNewBest" class="go-newbest hidden">NEW BEST</span>
+
+        <!-- Hero: distance travelled this run -->
+        <div class="go-hero">
+          <div class="go-dist"><span id="goDist">0</span><em>m</em></div>
+          <div class="go-heroLabel">Distance</div>
         </div>
-        <button id="againBtn" class="btn">PLAY AGAIN</button>
-        <button id="homeBtn" class="btn btn-ghost">HOME</button>
+
+        <!-- Best -->
+        <div class="go-best">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M12 2l2.9 6 6.6.6-5 4.4 1.5 6.4L12 16.9 5.9 19.9 7.4 13.5l-5-4.4 6.6-.6z" fill="#6bf0d8"/></svg>
+          <span class="go-bestLabel">Best</span>
+          <b id="goBest">0</b><i>m</i>
+        </div>
+
+        <div class="go-actions">
+          <button id="againBtn" class="btn">PLAY AGAIN</button>
+          <button id="homeBtn" class="btn btn-ghost">HOME</button>
+        </div>
         <p class="hint">Press <kbd>Space</kbd> to restart</p>
       </div>
     </div>
@@ -65,14 +77,14 @@
 
   <!-- Systems (classic scripts, loaded in dependency order).
        ?v= cache-buster — bump when shipping JS changes. -->
-  <script src="js/utils.js?v=48"></script>
-  <script src="js/environment.js?v=48"></script>
-  <script src="js/effects.js?v=48"></script>
-  <script src="js/river.js?v=48"></script>
-  <script src="js/swing.js?v=48"></script>
-  <script src="js/player.js?v=48"></script>
-  <script src="js/camera.js?v=48"></script>
-  <script src="js/ui.js?v=48"></script>
-  <script src="js/game.js?v=48"></script>
+  <script src="js/utils.js?v=49"></script>
+  <script src="js/environment.js?v=49"></script>
+  <script src="js/effects.js?v=49"></script>
+  <script src="js/river.js?v=49"></script>
+  <script src="js/swing.js?v=49"></script>
+  <script src="js/player.js?v=49"></script>
+  <script src="js/camera.js?v=49"></script>
+  <script src="js/ui.js?v=49"></script>
+  <script src="js/game.js?v=49"></script>
 </body>
 </html>
