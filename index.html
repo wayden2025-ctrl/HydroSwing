@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>HydroSwing</title>
-  <link rel="stylesheet" href="styles.css?v=49" />
+  <link rel="stylesheet" href="styles.css?v=51" />
 </head>
 <body>
   <div id="game">
@@ -28,9 +28,12 @@
         <div class="set-row"><span>Sound</span><button id="muteBtn" class="toggle">ON</button></div>
       </div>
 
-      <!-- Logo -->
+      <!-- Logo: uses assets/logo.png if present, otherwise the styled text. -->
       <div class="logo-wrap">
-        <h1 class="logo" data-text="HYDROSWING">HYDRO<span>SWING</span></h1>
+        <img class="logo-img" src="assets/logo.png?v=1" alt="HYDRO SWING"
+             onload="window.__keyLogo && window.__keyLogo(this)"
+             onerror="this.remove(); document.querySelector('.logo').hidden = false;" />
+        <h1 class="logo" data-text="HYDROSWING" hidden>HYDRO<span>SWING</span></h1>
       </div>
 
       <!-- Start prompt -->
@@ -75,16 +78,36 @@
     </div>
   </div>
 
+  <!-- Removes a white/near-white background from the logo image at load time
+       (keeps the coloured wordmark), so the PNG can be dropped in as-is. -->
+  <script>
+    window.__keyLogo = function (img) {
+      try {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+        const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
+        for (let i = 0; i < p.length; i += 4) {
+          const m = Math.min(p[i], p[i + 1], p[i + 2]);   // "whiteness": all channels high = white/gray
+          const a = 1 - Math.max(0, Math.min(1, (m - 205) / 50));
+          p[i + 3] = Math.round(p[i + 3] * a);
+        }
+        x.putImageData(d, 0, 0);
+        img.dataset.keyed || (img.dataset.keyed = '1', img.src = c.toDataURL('image/png'));
+      } catch (e) { /* tainted (file://) or unavailable — leave the image as-is */ }
+    };
+  </script>
+
   <!-- Systems (classic scripts, loaded in dependency order).
        ?v= cache-buster — bump when shipping JS changes. -->
-  <script src="js/utils.js?v=49"></script>
-  <script src="js/environment.js?v=49"></script>
-  <script src="js/effects.js?v=49"></script>
-  <script src="js/river.js?v=49"></script>
-  <script src="js/swing.js?v=49"></script>
-  <script src="js/player.js?v=49"></script>
-  <script src="js/camera.js?v=49"></script>
-  <script src="js/ui.js?v=49"></script>
-  <script src="js/game.js?v=49"></script>
+  <script src="js/utils.js?v=51"></script>
+  <script src="js/environment.js?v=51"></script>
+  <script src="js/effects.js?v=51"></script>
+  <script src="js/river.js?v=51"></script>
+  <script src="js/swing.js?v=51"></script>
+  <script src="js/player.js?v=51"></script>
+  <script src="js/camera.js?v=51"></script>
+  <script src="js/ui.js?v=51"></script>
+  <script src="js/game.js?v=51"></script>
 </body>
 </html>

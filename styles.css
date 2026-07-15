@@ -121,6 +121,27 @@ html, body {
   50%      { transform: skewX(-7deg) translateY(-8px); }
 }
 
+/* ---- Image logo (assets/logo.png) ---- */
+.logo-img {
+  display: block;
+  width: min(80vw, 540px);
+  height: auto;
+  filter: drop-shadow(0 6px 14px rgba(0, 20, 40, 0.45)) drop-shadow(0 0 20px rgba(53, 224, 255, 0.5));
+  animation: logoImgFloat 4.5s ease-in-out infinite, logoImgGlow 3.2s ease-in-out infinite;
+  will-change: transform, filter;
+}
+@keyframes logoImgFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-10px) scale(1.015); }
+}
+@keyframes logoImgGlow {
+  0%, 100% { filter: drop-shadow(0 6px 14px rgba(0, 20, 40, 0.45)) drop-shadow(0 0 16px rgba(53, 224, 255, 0.40)); }
+  50%      { filter: drop-shadow(0 6px 14px rgba(0, 20, 40, 0.45)) drop-shadow(0 0 30px rgba(53, 224, 255, 0.70)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-img { animation: none; }
+}
+
 /* ---- Press Start ---- */
 .start-wrap {
   position: absolute;

@@ -211,6 +211,7 @@ class GameManager {
     this.worldRot = 0; this.worldRotTarget = 0;
     this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };
     this.redirect = { active: false, t: 0, dur: 0 };
+    this._commitGrace = 0;
     this.camera.anchorY = 0.62;
     this.introT = null;
     this.held = false;
@@ -243,6 +244,7 @@ class GameManager {
     else this.camera.reset(this.player);
     // Smoothly redirect the boat straight onto the river over ~0.85s.
     this.redirect = fromMenu ? { active: true, t: 0, dur: 0.85 } : { active: false, t: 0, dur: 0 };
+    this._commitGrace = 0;
     this._lastS = 0; this._lastTangent = -Math.PI / 2;
     this.distance = 0;
     this.swings = 0;
@@ -471,12 +473,14 @@ class GameManager {
       // whichever lane the boat is actually nearest and move on.
       const forceOld = sp.age > 240;
 
-      // Commit triggers (a fork can NEVER stay open past ~320px on either
-      // lane — that stops the "invisible boundary" / stuck-fork glitches):
-      //   • engaged the branch post, or clearly drifted down the branch → BRANCH
-      //   • otherwise once you're past the fork on the main               → MAIN
-      const tookBranch = (sw.swinging && onBranchPost) ||
-        (lb.s > sp.forkS + 320 && Math.abs(lb.offset) < Math.abs(loc.offset)) ||
+      // Commit triggers:
+      //   BRANCH — you're swinging the branch post, or you're clearly INSIDE
+      //            the branch and OUTSIDE the main (unambiguously on it).
+      //   MAIN   — you're past the fork AND not hooked to the branch post
+      //            (so we never yank you off a branch swing you're setting up).
+      const clearlyOnBranch = lb.s > sp.forkS + 300 &&
+        Math.abs(lb.offset) < hw && Math.abs(loc.offset) > hw;
+      const tookBranch = (sw.swinging && onBranchPost) || clearlyOnBranch ||
         (forceOld && Math.abs(lb.offset) < Math.abs(loc.offset));
 
       if (tookBranch) {
@@ -484,25 +488,30 @@ class GameManager {
         this.boundary.reindex(this.player.x, this.player.y);   // full scan -> no teleport
         const nl = this.boundary.locate(this.player.x, this.player.y);
         activeOffset = nl.offset; activeS = nl.s; activeTangent = nl.tangent;
-        crashed = false;                       // safe on the commit frame
-      } else if (loc.s > sp.forkS + 300 || forceOld) {
-        if (sw.attached && onBranchPost) sw.release();  // drop a lingering tether
+        crashed = false;
+        this._commitGrace = 0.5;               // let the swing settle onto the branch
+      } else if (!onBranchPost && (loc.s > sp.forkS + 340 || forceOld)) {
         this.river._commitToMain();
         activeOffset = loc.offset; activeS = loc.s; activeTangent = loc.tangent;
         crashed = Math.abs(loc.offset) > hw - r;
       } else {
-        // Undecided throat: track whichever channel you're nearer, and make
-        // the crash test very forgiving (1.5x) — while you're still choosing
-        // and swinging across, NEITHER path's bank may block you. Only the
-        // lane you actually commit to gets normal boundaries; the other does
-        // nothing.
+        // Undecided throat (or hooked to the branch post, about to swing):
+        // track whichever channel you're nearer with a very forgiving crash
+        // test — while choosing/crossing, NEITHER bank may block you.
         const nearBranch = Math.abs(lb.offset) < Math.abs(loc.offset);
         activeOffset = nearBranch ? lb.offset : loc.offset;
         activeS = nearBranch ? lb.s : loc.s;
         activeTangent = nearBranch ? lb.tangent : loc.tangent;
-        const buf = hw * 1.5;
+        const buf = hw * 1.6;
         crashed = Math.abs(loc.offset) > buf && Math.abs(lb.offset) > buf;
       }
+    }
+
+    // Brief grace right after a commit so a slightly-off branch swing can
+    // settle onto the centerline without dying on a phantom bank.
+    if (this._commitGrace > 0) {
+      this._commitGrace -= dt;
+      if (Math.abs(activeOffset) < hw * 1.5) crashed = false;
     }
     // Fade the not-taken ghost path out once it's off-screen.
     this.river.updateGhost(this.camera.x, this.camera.y);
