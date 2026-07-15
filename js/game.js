@@ -593,7 +593,7 @@ class GameManager {
     for (const gm of this.gemItems) {
       if (gm.s < ps - 200 || gm.s > ps + 1300) continue;
       const by = Math.sin(gm.bob) * 3;
-      Game._drawRuby(ctx, gm.x, gm.y + by, 13, 0.22 + 0.16 * (0.5 + 0.5 * Math.sin(gm.bob)));
+      GameManager._drawRuby(ctx, gm.x, gm.y + by, 13, 0.22 + 0.16 * (0.5 + 0.5 * Math.sin(gm.bob)));
     }
   }
 
