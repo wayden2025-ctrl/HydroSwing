@@ -359,9 +359,13 @@ class EnvironmentManager {
       cg.addColorStop(1, 'rgba(120, 230, 255, 0)');
       ctx.fillStyle = cg; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
     }
-    // Diagonal sun rays; they streak longer/brighter as flow rises.
+    // Diagonal sun rays; they shimmer/brighten as flow rises. (Bounded
+    // sway only — an earlier unbounded term wrapped and made the whole
+    // background lurch during the launch.)
     for (let i = 0; i < 4; i++) {
-      const x = w * (0.08 + 0.27 * i) + Math.sin(t * 0.3 + i) * 40 - this.flow * t * 60 % w;
+      const x = w * (0.08 + 0.27 * i)
+        + Math.sin(t * 0.3 + i) * 40
+        + Math.sin(t * (0.5 + this.flow * 0.5) + i * 1.3) * this.flow * 26;
       const a = 0.045 + 0.03 * Math.sin(t * 0.7 + i) + this.flow * 0.04;
       ctx.fillStyle = `rgba(180, 245, 255, ${Math.max(0, a)})`;
       ctx.beginPath();

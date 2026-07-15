@@ -315,38 +315,48 @@ class GameManager {
     let crashed = this.boundary.isCrashed(loc.offset, r);
     // Only engage the fork logic when the boat is actually near the fork
     // (it's generated ~5000px ahead, long before the boat reaches it).
-    if (this.river.split && loc.s > this.river.split.forkS - 700) {
+    if (this.river.split) {
       const sp = this.river.split;
+      const sw = this.player.swing;
+      const onBranchPost = sw.pivot === sp.branchPivot;
       const lb = this.river.locateBranch(this.player.x, this.player.y);
-      this.river.lockSplitLane(loc, lb);   // lock to a lane once clearly diverged
+      sp.age = (sp.age || 0) + 1;
 
-      if (sp.locked === 'branch') {
-        // Committed lane: ONLY this channel can crash us (no phantom walls).
-        activeOffset = lb.offset; activeS = lb.s; activeTangent = lb.tangent;
-        crashed = Math.abs(lb.offset) > hw - r;
-      } else if (sp.locked === 'main') {
+      // Hard safety: no fork may ever stay open more than ~4s — commit to
+      // whichever lane the boat is actually nearest and move on.
+      const forceOld = sp.age > 240;
+
+      // Commit triggers (a fork can NEVER stay open past ~320px on either
+      // lane — that stops the "invisible boundary" / stuck-fork glitches):
+      //   • engaged the branch post, or clearly drifted down the branch → BRANCH
+      //   • otherwise once you're past the fork on the main               → MAIN
+      const tookBranch = (sw.swinging && onBranchPost) ||
+        (lb.s > sp.forkS + 320 && Math.abs(lb.offset) < Math.abs(loc.offset)) ||
+        (forceOld && Math.abs(lb.offset) < Math.abs(loc.offset));
+
+      if (tookBranch) {
+        this.river._commitToBranch();
+        this.boundary.index = Math.max(0, this.river._promotedForkIdx);
+        const nl = this.boundary.locate(this.player.x, this.player.y);
+        activeOffset = nl.offset; activeS = nl.s; activeTangent = nl.tangent;
+        crashed = false;                       // safe on the commit frame
+      } else if (loc.s > sp.forkS + 300 || forceOld) {
+        if (sw.attached && onBranchPost) sw.release();  // drop a lingering tether
+        this.river._commitToMain();
         activeOffset = loc.offset; activeS = loc.s; activeTangent = loc.tangent;
         crashed = Math.abs(loc.offset) > hw - r;
       } else {
-        // Undecided (near the fork): in-bounds if inside either channel.
+        // Undecided throat: water is the UNION of both channels — safe if
+        // inside EITHER, so no phantom wall while the lanes are still shared.
         const nearBranch = Math.abs(lb.offset) < Math.abs(loc.offset);
         activeOffset = nearBranch ? lb.offset : loc.offset;
         activeS = nearBranch ? lb.s : loc.s;
         activeTangent = nearBranch ? lb.tangent : loc.tangent;
         crashed = Math.abs(loc.offset) > hw - r && Math.abs(lb.offset) > hw - r;
       }
-
-      // Finish the fork once it's scrolled off-screen; keep only the lane
-      // we're in and continue generation there.
-      if (this.river.finalizeSplitIfOffscreen(this.camera.x, this.camera.y) === 'promoted') {
-        // The branch is now the main path; retarget the tracked index to
-        // the boat's actual spot along it (it's well past the fork).
-        const pts = this.river.points;
-        let idx = Math.max(0, this.river._promotedForkIdx);
-        while (idx < pts.length - 1 && pts[idx].s < activeS) idx++;
-        this.boundary.index = idx;
-      }
     }
+    // Fade the not-taken ghost path out once it's off-screen.
+    this.river.updateGhost(this.camera.x, this.camera.y);
 
     this._lastS = activeS;
     this._lastTangent = activeTangent;   // river forward direction for post-swing straighten
@@ -418,10 +428,12 @@ class GameManager {
     if (!isMenu) {
       // During the launch, banks start wide (off-screen) and slide inward.
       const bonus = this._introK != null && this._introK < 1
-        ? (1 - (this._introK * this._introK * (3 - 2 * this._introK))) * 650 : 0;
+        ? (1 - (this._introK * this._introK * (3 - 2 * this._introK))) * 300 : 0;
       const waterFlow = Utils.clamp(this.player.speed / 420, 0, 1);
       if (this.river.split) {
         this.river.drawForked(ctx, this.boundary.index, this.player.swing.pivot, waterFlow);
+      } else if (this.river.ghost) {
+        this.river.drawWithGhost(ctx, this.boundary.index, waterFlow);
       } else {
         this.river.draw(ctx, this.boundary.index, bonus, waterFlow);
       }

@@ -39,6 +39,7 @@ class RiverGenerator {
     // Branching state.
     this.split = null;             // active fork (see _startSplit)
     this.ghost = null;             // the NOT-taken path, kept visible until off-screen
+    this._forceTurnDir = 0;        // forces the main's next turn away from a fresh branch
     this._lastSplitS = -99999;
     this._promotedForkIdx = -1;    // set when a branch is promoted (game resets index)
 
@@ -143,7 +144,11 @@ class RiverGenerator {
     // Reaction straight before the turn.
     this._addStraight(Utils.rand(d.straight * 0.8, d.straight * 1.2));
 
-    const dir = Math.random() < 0.5 ? 1 : -1;
+    // After a fork, force the first turn AWAY from the branch so the two
+    // channels can never curve back and cross each other.
+    let dir;
+    if (this._forceTurnDir) { dir = this._forceTurnDir; this._forceTurnDir = 0; }
+    else dir = Math.random() < 0.5 ? 1 : -1;
     const R = Utils.rand(d.minR, d.maxR);
     const angle = Utils.pick(angles) * Utils.DEG;
 
@@ -185,6 +190,7 @@ class RiverGenerator {
   // ============================================================
 
   _maybeStartSplit() {
+    return;                                                    // forks disabled — one continuous path for now
     if (this.split) return;                                    // one fork at a time
     if (this.s < 3200) return;                                 // let players settle first
     if (this.s - this._lastSplitS < 4200) return;              // spacing between forks
@@ -193,27 +199,31 @@ class RiverGenerator {
     const forkIdx = this.points.length - 1;
     const forkS = this.s, fx = this.cx, fy = this.cy, fh = this.heading;
 
-    // Main continues straight past the fork so its next turn is well away.
-    this._addStraight(Utils.rand(480, 620));
+    // Main continues straight well past the fork so it stays straight
+    // through the whole choose-a-lane window and its next turn is off-screen.
+    this._addStraight(Utils.rand(720, 900));
 
     // Branch peels away with a turn whose ARC ENTRY is the fork, so the
     // post sits right where the player draws level with it.
     const d = RiverGenerator.diff(forkS);
     const dir = Math.random() < 0.5 ? 1 : -1;
+    // Force the main's first turn to bend AWAY from the branch (no crossing).
+    this._forceTurnDir = -dir;
     // Normal turn radius + a modest angle so the branch swing is as
     // forgiving as any other corner (a tight/steep peel made the fork a
     // death trap). The short straight stub still separates the channels.
-    const R = Utils.rand(d.minR, d.maxR);
-    const angle = Utils.rand(38, 50) * Utils.DEG;
+    // PROMPT but gentle peel: a tight-ish arc reaches ~28° quickly (short
+    // shared throat), then the branch runs straight at that gentle angle —
+    // so the two channels separate fast and read as two rivers, not a pool.
+    const R = Utils.rand(d.minR * 0.8, d.minR);
+    const angle = Utils.rand(26, 30) * Utils.DEG;
     const b = { points: [], pivots: [], cx: fx, cy: fy, heading: fh, s: forkS, featureCount: 3 };
     this._bPush(b);
     this._bTurn(b, R, angle, dir);
-    // Then just a straight run — a SHORT, non-crossing stub. Generating a
-    // full winding branch here made it loop back and intersect the main.
-    // Real turns resume once this branch is chosen and promoted.
-    this._bStraight(b, 1100);
+    this._bStraight(b, 1100);   // non-crossing stub; real turns resume after commit
 
-    this.split = { forkS, forkIdx, fork: { x: fx, y: fy }, dir, branch: b, locked: null };
+    // branchPivot is the single peel post: swinging it = you took the branch.
+    this.split = { forkS, forkIdx, fork: { x: fx, y: fy }, dir, branch: b, branchPivot: b.pivots[0] };
     this._lastSplitS = forkS;
   }
 
@@ -288,40 +298,41 @@ class RiverGenerator {
    * that can crash the boat (`split.locked`). This stops the other path's
    * banks from ever causing an "invisible boundary".
    */
-  lockSplitLane(mainLoc, branchLoc) {
-    const sp = this.split;
-    if (!sp || sp.locked) return;
-    const past = Math.max(mainLoc.s, branchLoc.s) - sp.forkS;
-    if (past < 300) return;
-    sp.locked = Math.abs(branchLoc.offset) < Math.abs(mainLoc.offset) ? 'branch' : 'main';
-  }
-
   /**
-   * Finish the fork once it has scrolled off-screen: the chosen lane
-   * becomes the sole river and generation continues on it; the other is
-   * discarded entirely (no lingering path). Returns 'promoted' (took the
-   * branch — indices shifted), 'kept' (stayed on main), or null.
+   * The fork commits the instant you ENGAGE the branch post (you took the
+   * branch) or pass the fork without it (you stayed on main) — see the
+   * GameManager. Both cases call one of these: the chosen lane becomes THE
+   * river and generation continues on it (so the tracked index never snaps
+   * — that snap was the "teleport"); the other lane is kept only as a
+   * fading visual ghost until it scrolls off-screen.
    */
-  finalizeSplitIfOffscreen(camX, camY) {
-    const sp = this.split;
-    if (!sp) return null;
-    if (!sp.locked) return null;                               // only after we've committed to a lane
-    if (Math.hypot(sp.fork.x - camX, sp.fork.y - camY) < 780) return null; // fork still on-screen
-    if (sp.locked === 'branch') { this._promoteBranch(); return 'promoted'; }
-    this.split = null;                                          // keep main, drop branch
-    return 'kept';
-  }
-
-  _promoteBranch() {
+  _commitToBranch() {
     const sp = this.split, b = sp.branch;
-    // Replace everything past the fork with the branch.
+    // The old main-forward becomes a visual ghost (no posts, not hookable).
+    this.ghost = { points: this.points.slice(sp.forkIdx + 1), fork: sp.fork };
+    // Promote the branch: splice it in as the continuation of the trunk.
     this.points.length = sp.forkIdx + 1;
     for (let i = 1; i < b.points.length; i++) this.points.push(b.points[i]);
     this.pivots = this.pivots.filter(p => p.endS <= sp.forkS).concat(b.pivots);
-    // Adopt the branch's cursor so normal generation continues forward.
     this.cx = b.cx; this.cy = b.cy; this.heading = b.heading; this.s = b.s; this._featureCount = b.featureCount;
     this._promotedForkIdx = sp.forkIdx;
     this.split = null;
+  }
+
+  _commitToMain() {
+    const sp = this.split;
+    this.ghost = { points: sp.branch.points, fork: sp.fork };
+    this.split = null;                                          // main already IS the river
+  }
+
+  /** Smoothly fade the ghost as the fork recedes, and drop it only once
+   *  it's well off-screen (so it never vanishes while still visible). */
+  updateGhost(camX, camY) {
+    const g = this.ghost;
+    if (!g) return;
+    const d = Math.hypot(g.fork.x - camX, g.fork.y - camY);
+    g.alpha = Utils.clamp((1500 - d) / 400, 0, 1);   // fade over d = 1100..1500
+    if (d > 1500) this.ghost = null;
   }
 
   /** Discard geometry well behind the player to bound memory. */
@@ -483,41 +494,28 @@ class RiverGenerator {
     if (blast >= 1) for (const p of sp.branch.pivots) this._drawBuoy(ctx, p, p === activePivot);
   }
 
-  /** After committing, keep drawing the not-taken (ghost) path merged
-   *  with the main until it scrolls off-screen — no instant pop. */
+  /** After committing, keep drawing the not-taken (ghost) path — faded and
+   *  BEHIND the main so it recedes and dissolves cleanly instead of popping
+   *  or overlapping the lane you're on. */
   drawWithGhost(ctx, activeIdx, flow = 0) {
     const g = this.ghost;
-    if (!g) return;
-    const pts = this.points, last = pts.length - 1;
-    const a = Utils.clamp((activeIdx | 0) - 130, 0, last);
-    const b = Utils.clamp((activeIdx | 0) + 260, 0, last);
-    const gp = g.points, glast = gp.length - 1;
+    const gp = g && g.points, glast = gp ? gp.length - 1 : 0;
     const hw = this.halfWidth;
 
-    const both = (width, color) => {
-      this._strokePath(ctx, pts, a, b, width, color);
-      if (glast >= 1) this._strokePath(ctx, gp, 0, glast, width, color);
-    };
-    both(hw + 26, '#0a3a52');   // shores
-    both(hw + 11, '#4fe3d8');   // rims
-    both(hw, '#3bb6ea');        // water last — merged throat, outer banks only
-    this._drawWaterAnim(ctx, pts, a, b, hw, flow);
-    if (glast >= 1) this._drawWaterAnim(ctx, gp, 0, glast, hw, flow);
+    if (gp && glast >= 1) {
+      ctx.save();
+      ctx.globalAlpha = g.alpha != null ? g.alpha : 1;
+      this._strokePath(ctx, gp, 0, glast, hw + 26, '#0a3a52');
+      this._strokePath(ctx, gp, 0, glast, hw + 11, '#4fe3d8');
+      this._strokePath(ctx, gp, 0, glast, hw, '#3bb6ea');
+      this._drawWaterAnim(ctx, gp, 0, glast, hw, flow);
+      ctx.restore();
+    }
+
+    // The lane you're on, full strength, on top.
+    this.draw(ctx, activeIdx, 0, flow);
   }
 
-  _drawIsland(ctx, is) {
-    ctx.save();
-    ctx.translate(is.x, is.y);
-    ctx.fillStyle = '#123a4a';                         // reef base
-    ctx.beginPath(); ctx.ellipse(0, 0, 42, 32, 0, 0, Utils.TWO_PI); ctx.fill();
-    ctx.fillStyle = '#d9c79a';                         // sandy top
-    ctx.beginPath(); ctx.ellipse(0, -2, 31, 22, 0, 0, Utils.TWO_PI); ctx.fill();
-    ctx.fillStyle = '#4a5a63';                         // rocks
-    ctx.beginPath(); ctx.arc(-9, 2, 7, 0, Utils.TWO_PI); ctx.arc(11, -3, 5.5, 0, Utils.TWO_PI); ctx.fill();
-    ctx.fillStyle = '#2f8f5e';                         // tuft of green
-    ctx.beginPath(); ctx.arc(3, 6, 6.5, 0, Utils.TWO_PI); ctx.fill();
-    ctx.restore();
-  }
 }
 
 /* ------------------------------------------------------------
