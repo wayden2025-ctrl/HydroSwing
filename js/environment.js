@@ -33,7 +33,7 @@ class EnvironmentManager {
     this.bubbles = [];
     this._initProps();
     // Seed some ambient so the scene starts alive.
-    for (let i = 0; i < 22; i++) this.motes.push(this._newMote());
+    for (let i = 0; i < 60; i++) this.motes.push(this._newMote());
     for (let i = 0; i < 7; i++) this.foam.push(this._newFoam());
     for (let i = 0; i < 16; i++) this.bubbles.push(this._newBubble(Math.random()));
   }
@@ -205,7 +205,7 @@ class EnvironmentManager {
           break;
         case 'whale': {
           c.x += c.dir * c.sp * (1 + flow * 0.8) * dt;
-          c.phase += dt * 0.9; c.roll = Math.sin(c.phase * 0.5) * 0.12;
+          c.phase += dt * 1.3; c.roll = Math.sin(c.phase * 0.5) * 0.12;
           c.blow -= dt;
           if (c.blow <= 0) { c.blow = Utils.rand(5, 9); this._spout(c.x + c.dir * 34 * c.scale, c.y - 4); }
           if (Math.random() < 0.4 * dt) this.drops.push({ x: c.x + Utils.rand(-40, 40) * c.scale, y: c.y + Utils.rand(-14, 14), state: 'ripple', r: 6, life: 0.9 }); // broad wake
@@ -474,27 +474,74 @@ class EnvironmentManager {
         break;
       }
       case 'whale': {
-        // Massive, mostly-visible body: dark back over turquoise, tail strokes.
+        // Streamlined blue whale: pointed head, small dorsal fin set back,
+        // long pectoral flipper, broad fluke. The tail flaps slowly and the
+        // rear body flexes so it glides gracefully.
         const s = c.scale, x = c.x, y = c.y;
-        ctx.save(); ctx.translate(x, y); ctx.scale(c.dir * s, s); ctx.rotate(c.roll * 0.3);
-        const tail = Math.sin(c.phase) * 0.4;
-        // soft body shadow
-        ctx.fillStyle = 'rgba(2, 20, 40, 0.18)';
-        ctx.beginPath(); ctx.ellipse(0, 6, 70, 24, 0, 0, Utils.TWO_PI); ctx.fill();
-        // fluke
-        ctx.fillStyle = 'rgba(24, 58, 96, 0.7)';
-        ctx.save(); ctx.translate(-58, 0); ctx.rotate(tail);
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-14, -16, -26, -14); ctx.quadraticCurveTo(-16, 0, -26, 14); ctx.quadraticCurveTo(-14, 16, 0, 0); ctx.fill();
+        const swim = Math.sin(c.phase);              // slow tail cycle -1..1
+        const BLUE = '#22548f';
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(c.dir * s, s);
+        ctx.rotate(swim * 0.05);                     // gentle whole-body sway
+
+        // Soft shadow beneath.
+        ctx.globalAlpha = 0.16; ctx.fillStyle = '#02142a';
+        ctx.beginPath(); ctx.ellipse(-4, 10, 60, 15, 0, 0, Utils.TWO_PI); ctx.fill();
+
+        ctx.globalAlpha = 0.74;
+
+        // Pectoral flipper (below, gently sweeping).
+        ctx.save();
+        ctx.translate(16, 9); ctx.rotate(0.5 + swim * 0.12);
+        ctx.fillStyle = BLUE;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(6, 12, 2, 24); ctx.quadraticCurveTo(-4, 12, 0, 0); ctx.fill();
         ctx.restore();
-        // dark blue back
-        ctx.fillStyle = 'rgba(26, 62, 104, 0.82)';
-        ctx.beginPath(); ctx.ellipse(0, 0, 60, 20, 0, 0, Utils.TWO_PI); ctx.fill();
-        // lighter underside hint on roll
-        ctx.fillStyle = `rgba(150, 200, 220, ${0.15 + Math.abs(c.roll) * 1.2})`;
-        ctx.beginPath(); ctx.ellipse(6, 6, 48, 12, 0, 0, Utils.TWO_PI); ctx.fill();
-        // head + blowhole
-        ctx.fillStyle = 'rgba(20, 50, 88, 0.85)';
-        ctx.beginPath(); ctx.arc(52, 0, 15, 0, Utils.TWO_PI); ctx.fill();
+
+        // Tail: the rear stock flexes then the broad fluke flaps.
+        ctx.save();
+        ctx.translate(-46, 0); ctx.rotate(swim * 0.38);
+        ctx.fillStyle = BLUE;
+        // stock
+        ctx.beginPath(); ctx.moveTo(6, -5); ctx.lineTo(-6, -3); ctx.lineTo(-6, 3); ctx.lineTo(6, 5); ctx.closePath(); ctx.fill();
+        // fluke (two lobes)
+        ctx.beginPath();
+        ctx.moveTo(-4, 0);
+        ctx.bezierCurveTo(-12, -4, -20, -14, -26, -12);
+        ctx.bezierCurveTo(-18, -4, -18, 4, -26, 12);
+        ctx.bezierCurveTo(-20, 14, -12, 4, -4, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+
+        // Main body — long streamlined silhouette (nose at +x).
+        ctx.fillStyle = BLUE;
+        ctx.beginPath();
+        ctx.moveTo(60, 0);                                   // nose tip
+        ctx.bezierCurveTo(48, -13, 22, -18, -6, -16);        // head + back rise
+        ctx.bezierCurveTo(-28, -14, -42, -9, -50, -3);       // taper to tail stock (top)
+        ctx.lineTo(-50, 3);
+        ctx.bezierCurveTo(-42, 8, -26, 13, 2, 14);           // belly
+        ctx.bezierCurveTo(28, 14, 48, 9, 60, 0);             // lower jaw back to nose
+        ctx.closePath(); ctx.fill();
+
+        // Small dorsal fin, set well back.
+        ctx.beginPath();
+        ctx.moveTo(-24, -14);
+        ctx.bezierCurveTo(-26, -22, -33, -22, -36, -12);
+        ctx.closePath(); ctx.fill();
+
+        // Lighter belly + throat grooves.
+        ctx.fillStyle = 'rgba(150, 198, 228, 0.35)';
+        ctx.beginPath();
+        ctx.moveTo(34, 8); ctx.bezierCurveTo(10, 14, -22, 13, -46, 4);
+        ctx.bezierCurveTo(-22, 10, 10, 11, 34, 5); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(205, 232, 250, 0.45)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(52, 4); ctx.bezierCurveTo(30, 11, 2, 12, -20, 8); ctx.stroke();
+
+        // Eye.
+        ctx.fillStyle = 'rgba(8, 26, 50, 0.85)';
+        ctx.beginPath(); ctx.arc(42, -1, 1.6, 0, Utils.TWO_PI); ctx.fill();
+
         ctx.restore();
         break;
       }
@@ -676,10 +723,10 @@ class EnvironmentManager {
       ctx.beginPath(); ctx.arc(bx, b.y, b.r, 0, Utils.TWO_PI); ctx.stroke();
     }
 
-    // Pollen / dust motes catching the light.
+    // Pollen / dust / plankton motes catching the light.
     for (const m of this.motes) {
-      const a = 0.10 + 0.14 * (0.5 + 0.5 * Math.sin(m.phase));
-      ctx.fillStyle = `rgba(255, 246, 214, ${a})`;
+      const a = 0.14 + 0.16 * (0.5 + 0.5 * Math.sin(m.phase));
+      ctx.fillStyle = `rgba(210, 245, 235, ${a})`;
       ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Utils.TWO_PI); ctx.fill();
     }
 

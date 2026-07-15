@@ -138,6 +138,13 @@ class GameManager {
     this.canvas.style.width = window.innerWidth + 'px';
     this.canvas.style.height = window.innerHeight + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Zoom out on narrow (mobile) screens so the swing posts — which sit off
+    // to the side at each turn's center — stay on screen. Wide screens keep
+    // the full 1.0 zoom.
+    this.PLAY_ZOOM = Utils.clamp(window.innerWidth / 560, 0.72, 1.0);
+    this.MENU_ZOOM = this.PLAY_ZOOM * 0.92;
+    if (this.state === STATE.MENU) this.camera.zoom = this.MENU_ZOOM;
   }
 
   _bindInput() {
@@ -187,6 +194,7 @@ class GameManager {
     this.boundary.reset();
     this.player.reset();
     this.effects.reset();
+    this._menu8 = 0; this._menuPrevH = null;   // fresh figure-8
     this.river.ensureAhead(4000);
     this.camera.reset(this.player);
     this.camera.zoom = this.MENU_ZOOM;
@@ -202,6 +210,7 @@ class GameManager {
     this.spin.active = false; this.spin.t = 0;
     this.worldRot = 0; this.worldRotTarget = 0;
     this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };
+    this.redirect = { active: false, t: 0, dur: 0 };
     this.camera.anchorY = 0.62;
     this.introT = null;
     this.held = false;
@@ -215,12 +224,26 @@ class GameManager {
    * from game over use a quick 0.45s version so "one more try" stays snappy.
    */
   beginPlay(fromMenu) {
+    // Keep the boat exactly where the figure-8 left it so it can steer
+    // smoothly onto the river instead of teleporting to the start.
+    const keepX = this.player.x, keepY = this.player.y, keepH = this.player.heading;
+    const keepBob = this.player.bob;
+    const camX = this.camera.x, camY = this.camera.y;
+
     this.river.reset();
     this.boundary.reset();
     this.player.reset();
-    this.effects.reset();
+    if (fromMenu) {
+      this.player.x = keepX; this.player.y = keepY; this.player.heading = keepH; this.player.bob = keepBob;
+    } else {
+      this.effects.reset();   // retry: clear old debris/wake (menu launch keeps its wake for continuity)
+    }
     this.river.ensureAhead(4000);
-    this.camera.reset(this.player);
+    if (fromMenu) { this.camera.x = camX; this.camera.y = camY; this.camera.shake = 0; }
+    else this.camera.reset(this.player);
+    // Smoothly redirect the boat straight onto the river over ~0.85s.
+    this.redirect = fromMenu ? { active: true, t: 0, dur: 0.85 } : { active: false, t: 0, dur: 0 };
+    this._lastS = 0; this._lastTangent = -Math.PI / 2;
     this.distance = 0;
     this.swings = 0;
     this.gemsRun = 0;
@@ -301,31 +324,81 @@ class GameManager {
     }
   }
 
-  /** Idle landing scene: the boat bobs and slowly rocks, alive but still. */
+  /** Landing scene: the boat cruises a clean figure-8, leaving a curving
+   *  wake + ripples. The camera is fixed on the pattern's center so you
+   *  actually see the 8. */
   _updateMenu(dt) {
     this.menuT += dt;
     const p = this.player;
-    p.bobPhase += dt * 3;
-    p.bob = Math.sin(p.bobPhase) * 2.4 + Math.sin(p.bobPhase * 2.1) * 0.8;
-    p.lean = Math.sin(this.menuT * 0.6) * 0.13;   // gentle few-degree rock
 
-    // Keep the camera locked on the idle boat (no follow jitter).
-    this.camera.x = p.x;
-    this.camera.y = p.y;
+    // Figure-8 (vertical Gerono lemniscate) around a fixed world center.
+    this._menu8 = (this._menu8 || 0) + dt * 0.9;   // path speed
+    const t = this._menu8, A = 118, B = 168, cx = 0, cy = 0;
+    const nx = cx + A * Math.sin(t) * Math.cos(t);
+    const ny = cy + B * Math.cos(t);
+    // Velocity -> heading (direction of travel).
+    const vx = A * Math.cos(2 * t);
+    const vy = -B * Math.sin(t);
+    p.x = nx; p.y = ny;
+    p.heading = Math.atan2(vy, vx);
+
+    // Bob over waves + bank into the turn (from how fast the heading swings).
+    p.bobPhase += dt * 5;
+    p.bob = Math.sin(p.bobPhase) * 1.7 + Math.sin(p.bobPhase * 2.1) * 0.6;
+    const dH = Utils.angleDelta(this._menuPrevH == null ? p.heading : this._menuPrevH, p.heading);
+    this._menuPrevH = p.heading;
+    const leanTarget = Utils.clamp((dH / dt) * 0.06, -0.4, 0.4);
+    p.lean = Utils.damp(p.lean, leanTarget, 8, dt);
+
+    // Camera fixed on the figure-8 center, pattern vertically centered.
+    this.camera.x = cx; this.camera.y = cy;
     this.camera.zoom = this.MENU_ZOOM;
+    this.camera.anchorY = 0.5;
 
-    // Tiny ripples + hull splashes beneath the idle boat.
-    if (Math.random() < 0.25) {
-      this.effects.ripples.push({ x: p.x + Utils.rand(-14, 14), y: p.y + Utils.rand(-6, 16), r: Utils.rand(3, 7), life: 1 });
-    }
-    if (Math.random() < 0.12) {
-      this.effects.emitFoam(p.x + Utils.rand(-8, 8), p.y + 12, p.bobPhase, 1);
-    }
-    this.effects.ambient(dt, p.x, p.y, 500);
+    // Curving wake + churn behind the moving boat, plus soft ripples.
+    const sx = p.x - Math.cos(p.heading) * 11, sy = p.y - Math.sin(p.heading) * 11;
+    this.effects.addWake(sx, sy, p.heading, 6);
+    if (Math.random() < 0.6) this.effects.emitFoam(sx, sy, p.heading, 1);
+    if (Math.random() < 0.22) this.effects.ripples.push({ x: p.x + Utils.rand(-10, 10), y: p.y + Utils.rand(-10, 10), r: Utils.rand(3, 7), life: 1 });
+    this.effects.ambient(dt, cx, cy, 520);
     this.effects.update(dt);
 
-    // Living ocean backdrop (idle: flow = 0).
-    this.env.update(dt, 0, { x: window.innerWidth / 2, y: window.innerHeight * 0.62 });
+    // Gentle living-ocean movement behind the scene.
+    this.env.update(dt, 0.12, { x: window.innerWidth / 2, y: window.innerHeight * 0.5 });
+  }
+
+  /** Launch redirect: from wherever the figure-8 left the boat, steer it
+   *  smoothly onto the river centerline pointing downstream, accelerating.
+   *  No collision or swinging yet — it's a clean cinematic hand-off. */
+  _updateRedirect(dt) {
+    const p = this.player;
+    // Align heading toward the river's forward direction here.
+    const loc = this.boundary.locate(p.x, p.y);
+    p.heading = Utils.angleLerp(p.heading, loc.tangent, 1 - Math.exp(-6 * dt));
+
+    // Move forward along the (easing) heading.
+    p.x += Math.cos(p.heading) * p.speed * dt;
+    p.y += Math.sin(p.heading) * p.speed * dt;
+
+    // Converge laterally onto the centerline (glide in from the side).
+    const loc2 = this.boundary.locate(p.x, p.y);
+    const nx = -Math.sin(loc2.tangent), ny = Math.cos(loc2.tangent);
+    const pull = 1 - Math.exp(-5 * dt);
+    p.x -= nx * loc2.offset * pull;
+    p.y -= ny * loc2.offset * pull;
+
+    this._lastS = loc2.s; this._lastTangent = loc2.tangent;
+    this.distance = Math.max(this.distance, Math.floor(loc2.s / 20));
+
+    // Wake + bob + settle upright.
+    const sx = p.x - Math.cos(p.heading) * 11, sy = p.y - Math.sin(p.heading) * 11;
+    this.effects.addWake(sx, sy, p.heading, 6);
+    this.effects.emitFoam(sx, sy, p.heading, 2);
+    p.bobPhase += dt * 6; p.bob = Math.sin(p.bobPhase) * 1.5;
+    p.lean = Utils.damp(p.lean, 0, 8, dt);
+
+    this.redirect.t += dt;
+    if (this.redirect.t >= this.redirect.dur) this.redirect.active = false;
   }
 
   _updatePlaying(dt) {
@@ -345,6 +418,19 @@ class GameManager {
 
     // Keep the river generated ahead and trimmed behind.
     this.river.ensureAhead(d0 + 5000);
+
+    // --- Launch redirect: steer the boat straight onto the river, no
+    //     collision / swinging yet. Runs for the first ~0.85s of the launch.
+    if (this.redirect && this.redirect.active) {
+      this._updateRedirect(dt);
+      this.camera.anchorY = Utils.damp(this.camera.anchorY, 0.62, 5, dt);
+      this.camera.update(dt, this.player);
+      this.effects.ambient(dt, this.camera.x, this.camera.y, 620);
+      this.effects.update(dt);
+      this.env.update(dt, Utils.clamp(this.player.speed / 380, 0, 1), { x: window.innerWidth / 2, y: window.innerHeight * 0.62 });
+      this.ui.updateHud(this.distance, this.gemsRun);
+      return;
+    }
 
     // Swing state before this frame's update (for edge-triggered SFX).
     const wasAttached = this.player.swing.attached;
@@ -368,8 +454,13 @@ class GameManager {
     let crashed = this.boundary.isCrashed(loc.offset, r);
     // Only engage the fork logic when the boat is actually near the fork
     // (it's generated ~5000px ahead, long before the boat reaches it).
-    if (this.river.split) {
+    // Only engage the fork's commit/collision logic once the boat is actually
+    // APPROACHING it. Forks are generated ~5000px ahead; running the commit
+    // timer from creation made every fork auto-commit long before the boat
+    // arrived (so the branch was gone by the time you got there).
+    if (this.river.split && loc.s > this.river.split.forkS - 800) {
       const sp = this.river.split;
+      this._widenForkS = sp.forkS;      // drives the fork width dip (persists after commit)
       const sw = this.player.swing;
       const onBranchPost = sw.pivot === sp.branchPivot;
       const lb = this.river.locateBranch(this.player.x, this.player.y);
@@ -389,7 +480,7 @@ class GameManager {
 
       if (tookBranch) {
         this.river._commitToBranch();
-        this.boundary.index = Math.max(0, this.river._promotedForkIdx);
+        this.boundary.reindex(this.player.x, this.player.y);   // full scan -> no teleport
         const nl = this.boundary.locate(this.player.x, this.player.y);
         activeOffset = nl.offset; activeS = nl.s; activeTangent = nl.tangent;
         crashed = false;                       // safe on the commit frame
@@ -399,13 +490,17 @@ class GameManager {
         activeOffset = loc.offset; activeS = loc.s; activeTangent = loc.tangent;
         crashed = Math.abs(loc.offset) > hw - r;
       } else {
-        // Undecided throat: water is the UNION of both channels — safe if
-        // inside EITHER, so no phantom wall while the lanes are still shared.
+        // Undecided throat: track whichever channel you're nearer, and make
+        // the crash test very forgiving (1.5x) — while you're still choosing
+        // and swinging across, NEITHER path's bank may block you. Only the
+        // lane you actually commit to gets normal boundaries; the other does
+        // nothing.
         const nearBranch = Math.abs(lb.offset) < Math.abs(loc.offset);
         activeOffset = nearBranch ? lb.offset : loc.offset;
         activeS = nearBranch ? lb.s : loc.s;
         activeTangent = nearBranch ? lb.tangent : loc.tangent;
-        crashed = Math.abs(loc.offset) > hw - r && Math.abs(lb.offset) > hw - r;
+        const buf = hw * 1.5;
+        crashed = Math.abs(loc.offset) > buf && Math.abs(lb.offset) > buf;
       }
     }
     // Fade the not-taken ghost path out once it's off-screen.
@@ -418,7 +513,16 @@ class GameManager {
     // Progressive difficulty (speed still ramping during the launch).
     const diff = RiverGenerator.diff(activeS);
     this.player.speed = diff.speed * accel;
-    this.river.halfWidth = diff.halfWidth;
+    // Branches narrow slightly through a fork then smoothly widen back to
+    // normal — a V-shaped width dip around the fork, no abrupt changes.
+    let wf = 1;
+    const since = activeS - (this._widenForkS ?? -1e9);
+    if (since >= -250 && since < 900) {
+      wf = since < 0
+        ? Utils.lerp(1, 0.82, (since + 250) / 250)                       // narrowing in
+        : Utils.lerp(0.82, 1, (since / 900) * (since / 900) * (3 - 2 * since / 900)); // widening back
+    }
+    this.river.halfWidth = diff.halfWidth * wf;
 
     // Score: credit a swing only for posts we grabbed and then cleared
     // while on the water (main + branch during a fork).
@@ -459,7 +563,7 @@ class GameManager {
     while (this._nextObsS < this.river.s - 150 && this._nextObsS < activeS + 4000) {
       const op = this.river.pointAtS(this._nextObsS);
       if (op) this.obstacles.push({ x: op.x, y: op.y, s: this._nextObsS, type: Math.random() < 0.5 ? 'spin' : 'reverse', spin: 0 });
-      this._nextObsS += Utils.rand(3200, 5500);   // slightly more frequent
+      this._nextObsS += Utils.rand(2200, 3600);   // more frequent twist objects
     }
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const o = this.obstacles[i];
@@ -541,7 +645,7 @@ class GameManager {
     // Static props (seaweed/coral/rocks/etc.) show on the landing only;
     // marine life + ambient keep going during gameplay.
     this.env.drawWater(ctx, w, h);
-    this.env.drawUnder(ctx, w, h, isMenu);
+    this.env.drawUnder(ctx, w, h, false);   // no static props (seaweed/rocks/etc.) anywhere
 
     this.camera.apply(ctx);
 
@@ -573,9 +677,9 @@ class GameManager {
     this.effects.drawOver(ctx);             // spray, debris, splash
     this.camera.restore(ctx);
 
-    // Surface floaters + ambient (foam, leaves, pollen, mist); lily pads
-    // only on the landing.
-    this.env.drawOver(ctx, w, h, isMenu);
+    // Surface floaters + ambient (foam, leaves, plankton/pollen, mist,
+    // ripples). No lily pads (showProps = false).
+    this.env.drawOver(ctx, w, h, false);
 
     // Close the world-rotation transform (everything above rotated together).
     if (rotating) ctx.restore();

@@ -41,6 +41,7 @@ class RiverGenerator {
     this.ghost = null;             // the NOT-taken path, kept visible until off-screen
     this._forceTurnDir = 0;        // forces the main's next turn away from a fresh branch
     this._lastSplitS = -99999;
+    this._nextForkS = undefined;   // distance-scheduled next fork (re-randomized each run)
     this._promotedForkIdx = -1;    // set when a branch is promoted (game resets index)
 
     // Seed with a generous straight so the player can settle in.
@@ -139,7 +140,9 @@ class RiverGenerator {
     // meanders like real flowing water. Spacing, radii and pivot placement
     // are unchanged — only the bend amount is now continuous. Gentle early,
     // wider range once players have settled in.
-    const angleRange = this._featureCount < 3 ? [18, 55] : [22, 115];
+    // Moderate bends only (no near-hairpins) so the river meanders like real
+    // flowing water and never doubles back to cross itself.
+    const angleRange = this._featureCount < 3 ? [16, 42] : [20, 68];
     const randAngle = () => Utils.rand(angleRange[0], angleRange[1]) * Utils.DEG;
 
     // Reaction straight before the turn.
@@ -153,11 +156,10 @@ class RiverGenerator {
     const R = Utils.rand(d.minR, d.maxR);
     const angle = randAngle();
 
-    // Occasionally build an S-curve: two opposite turns back-to-back
-    // with a short breather between them.
-    if (d.t > 0.25 && Math.random() < 0.3) {
+    // Occasionally build a gentle S-curve: two opposite bends with a breather.
+    if (d.t > 0.25 && Math.random() < 0.22) {
       const R2 = Utils.rand(d.minR, d.maxR);
-      const a2 = Utils.rand(20, 60) * Utils.DEG;      // gentle opposite bend
+      const a2 = Utils.rand(18, 45) * Utils.DEG;      // gentle opposite bend
       // Breather between the two opposite turns — scaled to speed so it
       // never drops below ~0.3s of reaction even late in a run.
       const breather = Math.max(120, d.speed * 0.32);
@@ -191,11 +193,12 @@ class RiverGenerator {
   // ============================================================
 
   _maybeStartSplit() {
-    return;                                                    // forks disabled — one continuous path for now
-    if (this.split) return;                                    // one fork at a time
-    if (this.s < 3200) return;                                 // let players settle first
-    if (this.s - this._lastSplitS < 4200) return;              // spacing between forks
-    if (Math.random() > 0.32) return;                          // occasional
+    if (this.split || this.ghost) return;                      // one fork at a time
+    if (this.s < 2600) return;                                 // let players settle first
+    // Distance-based, jittered spacing so forks feel irregular/organic.
+    if (this._nextForkS === undefined) this._nextForkS = Utils.rand(2000, 2800);
+    if (this.s < this._nextForkS) return;
+    this._nextForkS = this.s + Utils.rand(1900, 3100);         // schedule the next one (more frequent)
 
     const forkIdx = this.points.length - 1;
     const forkS = this.s, fx = this.cx, fy = this.cy, fh = this.heading;
@@ -210,17 +213,13 @@ class RiverGenerator {
     const dir = Math.random() < 0.5 ? 1 : -1;
     // Force the main's first turn to bend AWAY from the branch (no crossing).
     this._forceTurnDir = -dir;
-    // Normal turn radius + a modest angle so the branch swing is as
-    // forgiving as any other corner (a tight/steep peel made the fork a
-    // death trap). The short straight stub still separates the channels.
-    // PROMPT but gentle peel: a tight-ish arc reaches ~28° quickly (short
-    // shared throat), then the branch runs straight at that gentle angle —
-    // so the two channels separate fast and read as two rivers, not a pool.
-    const R = Utils.rand(d.minR * 0.8, d.minR);
-    const angle = Utils.rand(26, 30) * Utils.DEG;
+    // A clean 90° branch: the main goes straight, the branch turns a full
+    // quarter-circle off to the side (a normal 90° swing). The tight peel
+    // separates the channels fast so the banks never overlap.
+    const R = Utils.rand(d.minR, d.maxR);
     const b = { points: [], pivots: [], cx: fx, cy: fy, heading: fh, s: forkS, featureCount: 3 };
     this._bPush(b);
-    this._bTurn(b, R, angle, dir);
+    this._bTurn(b, R, Math.PI / 2, dir);
     this._bStraight(b, 1100);   // non-crossing stub; real turns resume after commit
 
     // branchPivot is the single peel post: swinging it = you took the branch.
@@ -451,11 +450,13 @@ class RiverGenerator {
   }
 
   drawPivots(ctx, activePivot, playerS) {
+    // During a fork, hide the main's post-fork posts so the ONLY post at the
+    // split is the branch peel post — one clear choice, no clutter.
+    const hideAfter = this.split ? this.split.forkS : Infinity;
     for (const p of this.pivots) {
       const active = p === activePivot;
-      // Declutter: only draw posts near the boat's current stretch
-      // (plus whichever we're attached to), so crossing branches don't
-      // spray unreachable posts across the screen.
+      if (!active && p.startS > hideAfter) continue;
+      // Declutter: only draw posts near the boat's current stretch.
       if (!active && (p.endS < playerS - 250 || p.startS > playerS + 1500)) continue;
       this._drawBuoy(ctx, p, active);
     }
@@ -465,15 +466,15 @@ class RiverGenerator {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.fillStyle = 'rgba(0,40,70,0.18)';
-    ctx.beginPath(); ctx.arc(2, 3, 12, 0, Utils.TWO_PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(2, 4, 16, 0, Utils.TWO_PI); ctx.fill();
     ctx.fillStyle = active ? '#ffd23f' : '#ff8a3d';
-    ctx.beginPath(); ctx.arc(0, 0, active ? 12 : 10, 0, Utils.TWO_PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, active ? 15 : 13, 0, Utils.TWO_PI); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath(); ctx.arc(-3, -3, 3.5, 0, Utils.TWO_PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(-4, -4, 4.5, 0, Utils.TWO_PI); ctx.fill();
     if (active) {
       ctx.strokeStyle = 'rgba(255,210,63,0.6)';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(0, 0, 20, 0, Utils.TWO_PI); ctx.stroke();
+      ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.arc(0, 0, 25, 0, Utils.TWO_PI); ctx.stroke();
     }
     ctx.restore();
   }
@@ -528,6 +529,32 @@ class RiverGenerator {
 
     // The lane you're on, full strength, on top.
     this.draw(ctx, activeIdx, 0, flow);
+  }
+
+  /** A long rounded sandbar/reef down the middle of a split. */
+  _drawIsland(ctx, is) {
+    const len = is.len || 460, w = is.w || 40;
+    ctx.save();
+    ctx.translate(is.x, is.y);
+    ctx.rotate((is.dir || 0) + Math.PI / 2);   // +y runs down the length
+    const leaf = (sw) => {
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.bezierCurveTo(sw, len * 0.16, sw, len * 0.7, 0, len);
+      ctx.bezierCurveTo(-sw, len * 0.7, -sw, len * 0.16, 0, -8);
+      ctx.closePath();
+    };
+    ctx.fillStyle = 'rgba(18, 66, 88, 0.6)'; leaf(w + 9); ctx.fill();   // submerged reef halo
+    ctx.fillStyle = '#c9b487'; leaf(w); ctx.fill();                      // sand
+    ctx.fillStyle = '#d8c79c'; leaf(w * 0.66); ctx.fill();
+    // A few rocks + tufts of green scattered along it.
+    const rnd = (n) => { const v = Math.sin((is.seed || 0) + n * 12.9898) * 43758.5; return v - Math.floor(v); };
+    for (let i = 0; i < 6; i++) {
+      const y = (0.14 + 0.72 * (i / 5)) * len, rx = (rnd(i) - 0.5) * w * 0.8, k = rnd(i + 20);
+      if (k < 0.5) { ctx.fillStyle = '#5a6a72'; ctx.beginPath(); ctx.arc(rx, y, 3.5 + rnd(i + 5) * 3, 0, Utils.TWO_PI); ctx.fill(); }
+      else { ctx.fillStyle = '#2f8f5e'; ctx.beginPath(); ctx.arc(rx, y, 4 + rnd(i + 7) * 3, 0, Utils.TWO_PI); ctx.fill(); }
+    }
+    ctx.restore();
   }
 
 }
@@ -589,5 +616,24 @@ class RiverBoundarySystem {
   /** True if the boat (radius r) is touching or past either bank. */
   isCrashed(offset, r) {
     return Math.abs(offset) > this.river.halfWidth - r;
+  }
+
+  /** Full scan for the nearest centerline index to (x, y). Used once when a
+   *  branch is promoted so the tracked index lands on the boat's ACTUAL spot
+   *  on the new path — it can never snap/teleport regardless of distance. */
+  reindex(x, y) {
+    const pts = this.river.points;
+    if (pts.length < 2) { this.index = 0; return 0; }
+    let best = Infinity, bi = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const abx = b.x - a.x, aby = b.y - a.y, apx = x - a.x, apy = y - a.y;
+      const len2 = abx * abx + aby * aby || 1e-6;
+      const t = Utils.clamp((apx * abx + apy * aby) / len2, 0, 1);
+      const px = a.x + abx * t, py = a.y + aby * t, d = Utils.dist(x, y, px, py);
+      if (d < best) { best = d; bi = i; }
+    }
+    this.index = bi;
+    return bi;
   }
 }
