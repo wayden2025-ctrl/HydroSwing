@@ -157,16 +157,25 @@ html, body {
    ============================================================ */
 .hud {
   position: absolute; top: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between;
-  padding: 22px 26px; z-index: 5; pointer-events: none;
+  display: flex; justify-content: center;
+  padding: 18px 26px; z-index: 5; pointer-events: none;
   opacity: 0; transition: opacity 0.6s ease;
 }
 .hud.show { opacity: 1; }
-.hud-item { text-align: left; text-shadow: 0 2px 8px rgba(0, 20, 40, 0.5); display: flex; align-items: baseline; gap: 4px; }
-.hud-item span { font-size: 34px; font-weight: 900; color: #fff; }
-.hud-item label { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
-.hud-item.gem { align-items: center; }
-.hud-item.gem .pi { font-size: 22px; filter: drop-shadow(0 0 6px rgba(53,224,255,0.6)); }
+
+/* Centered scoreboard: big distance, smaller cyan gem counter beneath it. */
+.scoreboard { display: flex; flex-direction: column; align-items: center; }
+.score-dist { display: flex; align-items: baseline; gap: 6px; text-shadow: 0 3px 12px rgba(0, 20, 40, 0.6); }
+.score-dist span { font-size: 62px; font-weight: 900; color: #fff; line-height: 1; letter-spacing: -1px; }
+.score-dist label { font-size: 20px; font-weight: 700; color: rgba(255, 255, 255, 0.85); }
+.score-gems {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px;
+  color: #6bf0d8; font-weight: 800; font-size: 22px;
+  text-shadow: 0 0 14px rgba(79, 227, 216, 0.55), 0 2px 6px rgba(0, 20, 40, 0.5);
+}
+.score-gems .pi { font-size: 20px; filter: drop-shadow(0 0 6px rgba(53, 224, 255, 0.7)); }
+.score-gems.bump { animation: gemBump 0.28s cubic-bezier(0.2, 1.5, 0.4, 1); }
+@keyframes gemBump { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
 
 /* ============================================================
    Game Over  (ocean-themed, glassmorphism)
@@ -241,6 +250,14 @@ html, body {
   transition: transform 0.08s ease;
 }
 .btn:active { transform: translateY(3px) scale(0.98); }
+.btn-ghost {
+  margin-top: 12px;
+  background: transparent;
+  color: #9fd4e6; font-size: clamp(16px, 4vw, 20px);
+  border: 1px solid rgba(120, 240, 255, 0.35);
+  padding: 11px 44px; box-shadow: none;
+}
+.btn-ghost:active { transform: translateY(2px) scale(0.98); }
 .hint { margin-top: 18px; color: #7fb6cc; font-size: 13px; }
 kbd { background: rgba(120, 240, 255, 0.16); border: 1px solid rgba(120,240,255,0.3); border-radius: 6px; padding: 2px 8px; font-family: inherit; font-weight: 700; color: #eafcff; }
 

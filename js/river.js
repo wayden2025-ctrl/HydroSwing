@@ -346,6 +346,20 @@ class RiverGenerator {
     return cut; // caller shifts any stored indices by this amount
   }
 
+  /** Interpolated centerline point at arc-length `s` (for placing gems). */
+  pointAtS(s) {
+    const pts = this.points;
+    if (pts.length < 2) return null;
+    let i = pts.length - 1;
+    while (i > 0 && pts[i].s > s) i--;
+    const a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
+    const t = b.s > a.s ? (s - a.s) / (b.s - a.s) : 0;
+    return {
+      x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
+      nx: Utils.lerp(a.nx, b.nx, t), ny: Utils.lerp(a.ny, b.ny, t), s,
+    };
+  }
+
   // -------------------- drawing --------------------
 
   /**

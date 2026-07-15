@@ -29,8 +29,17 @@ class UIManager {
     this.goSwings = document.getElementById('goSwings');
     this.goBest = document.getElementById('goBest');
     this.againBtn = document.getElementById('againBtn');
+    this.homeBtn = document.getElementById('homeBtn');
 
+    this._scoreGems = document.querySelector('.score-gems');
     this._hideTimer = null;
+  }
+
+  /** Pop the gem counter when one is collected. */
+  bumpGems() {
+    const el = this._scoreGems;
+    if (!el) return;
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
   }
 
   /** Show the landing screen (fresh, un-launched). */

@@ -69,7 +69,9 @@ class GameManager {
     this.held = false;
     this.distance = 0;
     this.swings = 0;
-    this.gemsRun = 0;       // gems earned this run (1 per swing)
+    this.gemsRun = 0;       // gems COLLECTED this run
+    this.gemItems = [];     // collectible gems floating in the river
+    this._nextGemS = 900;   // arc-length of the next gem to spawn
     this.best = Number(localStorage.getItem('hydroswing_best') || 0);
     this.gems = Number(localStorage.getItem('hydroswing_gems') || 0);
     this.muted = localStorage.getItem('hydroswing_muted') === '1';
@@ -124,6 +126,7 @@ class GameManager {
     window.addEventListener('pointercancel', up);
 
     this.ui.againBtn.addEventListener('click', (e) => { e.stopPropagation(); this.beginPlay(false); });
+    this.ui.homeBtn.addEventListener('click', (e) => { e.stopPropagation(); this.enterMenu(); });
 
     // Settings gear + mute toggle (do not start the game).
     this.ui.settingsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -158,6 +161,8 @@ class GameManager {
     this.distance = 0;
     this.swings = 0;
     this.gemsRun = 0;
+    this.gemItems = [];
+    this._nextGemS = 900;
     this.introT = null;
     this.held = false;
     this.state = STATE.MENU;
@@ -179,6 +184,8 @@ class GameManager {
     this.distance = 0;
     this.swings = 0;
     this.gemsRun = 0;
+    this.gemItems = [];
+    this._nextGemS = 900;
     this.freeze = 0;
     this.held = false;
     this.introT = 0;
@@ -373,8 +380,31 @@ class GameManager {
       if (!p.cleared && p.grabbed && activeS > p.endS + 4 && Math.abs(activeOffset) < this.river.halfWidth) {
         p.cleared = true;
         this.swings++;
-        this.gemsRun++;        // one gem per clean swing
         this.audio.swingOk();
+      }
+    }
+
+    // Collectible gems: spawn ahead in the middle of the river, collect on
+    // touch, cull behind.
+    while (this._nextGemS < this.river.s - 150 && this._nextGemS < activeS + 4000) {
+      const gp = this.river.pointAtS(this._nextGemS);
+      if (gp) {
+        const off = Utils.rand(-0.3, 0.3) * this.river.halfWidth;   // near the center line
+        this.gemItems.push({ x: gp.x + gp.nx * off, y: gp.y + gp.ny * off, s: this._nextGemS, bob: Math.random() * 6.28 });
+      }
+      this._nextGemS += Utils.rand(650, 1150);
+    }
+    for (let i = this.gemItems.length - 1; i >= 0; i--) {
+      const gm = this.gemItems[i];
+      gm.bob += dt * 4;
+      if (gm.s < activeS - 250) { this.gemItems.splice(i, 1); continue; }   // behind us
+      if (Math.hypot(gm.x - this.player.x, gm.y - this.player.y) < 26) {
+        this.gemItems.splice(i, 1);
+        this.gemsRun++;
+        this.audio.blip(1080, 0.09, 'triangle', 0.12);
+        this.ui.bumpGems();
+        this.effects.ripples.push({ x: gm.x, y: gm.y, r: 3, life: 1 });
+        this.effects.emitFoam(gm.x, gm.y, 0, 4);
       }
     }
 
@@ -442,6 +472,7 @@ class GameManager {
     this.effects.drawUnder(ctx);            // wake + ripples + glints
 
     if (!isMenu) this.river.drawPivots(ctx, this.player.swing.pivot, this._lastS || 0);
+    if (!isMenu) this._drawGems(ctx);
 
     if (this.player.alive) {
       if (!isMenu) this.player.drawCable(ctx);
@@ -458,6 +489,23 @@ class GameManager {
     // Screen-space edge speed blur (ramps in during launch, lingers subtly
     // at high speed).
     this._drawEdgeBlur(ctx, w, h);
+  }
+
+  /** Draw the collectible gems floating on the river (world space). */
+  _drawGems(ctx) {
+    if (!this.gemItems.length) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '24px sans-serif';
+    for (const gm of this.gemItems) {
+      const by = Math.sin(gm.bob) * 3;
+      const glow = 0.18 + 0.12 * (0.5 + 0.5 * Math.sin(gm.bob));
+      ctx.fillStyle = `rgba(90, 230, 255, ${glow})`;
+      ctx.beginPath(); ctx.arc(gm.x, gm.y + by, 15, 0, Utils.TWO_PI); ctx.fill();
+      ctx.fillText('💎', gm.x, gm.y + by);
+    }
+    ctx.restore();
   }
 
   /** Darkened, motion-blurred screen edges — energy of speed. Ramps in

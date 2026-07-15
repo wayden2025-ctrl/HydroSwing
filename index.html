@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>HydroSwing</title>
-  <link rel="stylesheet" href="styles.css?v=29" />
+  <link rel="stylesheet" href="styles.css?v=30" />
 </head>
 <body>
   <div id="game">
@@ -37,10 +37,12 @@
       </div>
     </div>
 
-    <!-- ============ In-game HUD ============ -->
+    <!-- ============ In-game HUD (centered scoreboard + gem counter) ============ -->
     <div id="hud" class="hud">
-      <div class="hud-item"><span id="hudDist">0</span><label>m</label></div>
-      <div class="hud-item gem"><span class="pi">💎</span><span id="hudGems">0</span></div>
+      <div class="scoreboard">
+        <div class="score-dist"><span id="hudDist">0</span><label>m</label></div>
+        <div class="score-gems"><span class="pi">💎</span><span id="hudGems">0</span></div>
+      </div>
     </div>
 
     <!-- ============ Game Over ============ -->
@@ -53,6 +55,7 @@
           <div class="stat best"><span id="goBest">0</span><label>Best</label></div>
         </div>
         <button id="againBtn" class="btn">PLAY AGAIN</button>
+        <button id="homeBtn" class="btn btn-ghost">HOME</button>
         <p class="hint">Press <kbd>Space</kbd> to restart</p>
       </div>
     </div>
@@ -60,14 +63,14 @@
 
   <!-- Systems (classic scripts, loaded in dependency order).
        ?v= cache-buster — bump when shipping JS changes. -->
-  <script src="js/utils.js?v=29"></script>
-  <script src="js/environment.js?v=29"></script>
-  <script src="js/effects.js?v=29"></script>
-  <script src="js/river.js?v=29"></script>
-  <script src="js/swing.js?v=29"></script>
-  <script src="js/player.js?v=29"></script>
-  <script src="js/camera.js?v=29"></script>
-  <script src="js/ui.js?v=29"></script>
-  <script src="js/game.js?v=29"></script>
+  <script src="js/utils.js?v=30"></script>
+  <script src="js/environment.js?v=30"></script>
+  <script src="js/effects.js?v=30"></script>
+  <script src="js/river.js?v=30"></script>
+  <script src="js/swing.js?v=30"></script>
+  <script src="js/player.js?v=30"></script>
+  <script src="js/camera.js?v=30"></script>
+  <script src="js/ui.js?v=30"></script>
+  <script src="js/game.js?v=30"></script>
 </body>
 </html>
