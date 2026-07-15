@@ -17,6 +17,7 @@ class CameraController {
     this._shakeX = 0;
     this._shakeY = 0;
     this.lookAhead = 200; // px in front of the boat we bias toward
+    this.anchorY = 0.62;  // boat's vertical screen position (moves to center during a world-spin)
   }
 
   reset(target) {
@@ -46,7 +47,7 @@ class CameraController {
     const w = this.canvas.width / (window.devicePixelRatio || 1);
     const h = this.canvas.height / (window.devicePixelRatio || 1);
     ctx.save();
-    ctx.translate(w / 2 + this._shakeX, h * 0.62 + this._shakeY); // boat sits low-center
+    ctx.translate(w / 2 + this._shakeX, h * this.anchorY + this._shakeY); // boat sits low-center
     ctx.scale(this.zoom, this.zoom);
     ctx.translate(-this.x, -this.y);
   }

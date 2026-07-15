@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>HydroSwing</title>
-  <link rel="stylesheet" href="styles.css?v=30" />
+  <link rel="stylesheet" href="styles.css?v=34" />
 </head>
 <body>
   <div id="game">
@@ -13,12 +13,14 @@
     <!-- ============ Landing screen (chrome over the canvas) ============ -->
     <div id="menu" class="landing">
       <!-- Top-left: the one and only button -->
-      <button id="settingsBtn" class="glass-btn" aria-label="Settings">⚙</button>
+      <button id="settingsBtn" class="glass-btn" aria-label="Settings">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#eafcff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg>
+      </button>
 
       <!-- Top-right: gems + best distance -->
       <div class="top-right">
-        <div class="glass-panel"><span class="pi">💎</span><span id="gemCount">0</span></div>
-        <div class="glass-panel"><span class="pi">🏆</span><span id="bestCount">0</span><small>m</small></div>
+        <div class="glass-panel"><svg class="ico ico-ruby" viewBox="0 0 24 24"><path d="M12 2 L22 9 L12 22 L2 9 Z" fill="#e0234a"/><path d="M12 2 L22 9 L12 11 L2 9 Z" fill="#ff5c7a"/></svg><span id="gemCount">0</span></div>
+        <div class="glass-panel"><svg class="ico" viewBox="0 0 24 24"><path d="M12 2l2.9 6 6.6.6-5 4.4 1.5 6.4L12 16.9 5.9 19.9 7.4 13.5l-5-4.4 6.6-.6z" fill="#6bf0d8"/></svg><span id="bestCount">0</span><small>m</small></div>
       </div>
 
       <!-- Settings popover -->
@@ -41,7 +43,7 @@
     <div id="hud" class="hud">
       <div class="scoreboard">
         <div class="score-dist"><span id="hudDist">0</span><label>m</label></div>
-        <div class="score-gems"><span class="pi">💎</span><span id="hudGems">0</span></div>
+        <div class="score-gems"><svg class="ico ico-ruby" viewBox="0 0 24 24"><path d="M12 2 L22 9 L12 22 L2 9 Z" fill="#e0234a"/><path d="M12 2 L22 9 L12 11 L2 9 Z" fill="#ff5c7a"/></svg><span id="hudGems">0</span></div>
       </div>
     </div>
 
@@ -63,14 +65,14 @@
 
   <!-- Systems (classic scripts, loaded in dependency order).
        ?v= cache-buster — bump when shipping JS changes. -->
-  <script src="js/utils.js?v=30"></script>
-  <script src="js/environment.js?v=30"></script>
-  <script src="js/effects.js?v=30"></script>
-  <script src="js/river.js?v=30"></script>
-  <script src="js/swing.js?v=30"></script>
-  <script src="js/player.js?v=30"></script>
-  <script src="js/camera.js?v=30"></script>
-  <script src="js/ui.js?v=30"></script>
-  <script src="js/game.js?v=30"></script>
+  <script src="js/utils.js?v=34"></script>
+  <script src="js/environment.js?v=34"></script>
+  <script src="js/effects.js?v=34"></script>
+  <script src="js/river.js?v=34"></script>
+  <script src="js/swing.js?v=34"></script>
+  <script src="js/player.js?v=34"></script>
+  <script src="js/camera.js?v=34"></script>
+  <script src="js/ui.js?v=34"></script>
+  <script src="js/game.js?v=34"></script>
 </body>
 </html>

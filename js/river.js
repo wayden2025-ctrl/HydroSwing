@@ -135,11 +135,12 @@ class RiverGenerator {
   /** Generate one feature: a straight + a turn (or an S-curve). */
   _nextFeature() {
     const d = this._difficulty();
-    // Only three corner types exist, so the player builds muscle memory
-    // for each: the 45 flick, the 90 quarter-swing, the 180 hairpin.
-    const angles = this._featureCount < 3
-      ? [45, 90]                            // ease players in (no hairpins yet)
-      : [45, 45, 90, 90, 90, 180];          // 180s are the rare, dramatic ones
+    // Turns take ANY natural angle (not snapped to 45/90/180) so the river
+    // meanders like real flowing water. Spacing, radii and pivot placement
+    // are unchanged — only the bend amount is now continuous. Gentle early,
+    // wider range once players have settled in.
+    const angleRange = this._featureCount < 3 ? [18, 55] : [22, 115];
+    const randAngle = () => Utils.rand(angleRange[0], angleRange[1]) * Utils.DEG;
 
     // Reaction straight before the turn.
     this._addStraight(Utils.rand(d.straight * 0.8, d.straight * 1.2));
@@ -150,13 +151,13 @@ class RiverGenerator {
     if (this._forceTurnDir) { dir = this._forceTurnDir; this._forceTurnDir = 0; }
     else dir = Math.random() < 0.5 ? 1 : -1;
     const R = Utils.rand(d.minR, d.maxR);
-    const angle = Utils.pick(angles) * Utils.DEG;
+    const angle = randAngle();
 
     // Occasionally build an S-curve: two opposite turns back-to-back
     // with a short breather between them.
     if (d.t > 0.25 && Math.random() < 0.3) {
       const R2 = Utils.rand(d.minR, d.maxR);
-      const a2 = Utils.pick([45, 90]) * Utils.DEG;   // S-curve uses the same set
+      const a2 = Utils.rand(20, 60) * Utils.DEG;      // gentle opposite bend
       // Breather between the two opposite turns — scaled to speed so it
       // never drops below ~0.3s of reaction even late in a run.
       const breather = Math.max(120, d.speed * 0.32);
@@ -253,13 +254,12 @@ class RiverGenerator {
   }
   _bFeature(b) {
     const d = RiverGenerator.diff(b.s);
-    const angles = b.featureCount < 4 ? [45, 90] : [45, 45, 90, 90, 90, 180];
     this._bStraight(b, Utils.rand(d.straight * 0.8, d.straight * 1.2));
     const dir = Math.random() < 0.5 ? 1 : -1;
     const R = Utils.rand(d.minR, d.maxR);
-    const angle = Utils.pick(angles) * Utils.DEG;
+    const angle = Utils.rand(22, 115) * Utils.DEG;   // continuous natural bend
     if (d.t > 0.25 && Math.random() < 0.3) {
-      const R2 = Utils.rand(d.minR, d.maxR), a2 = Utils.pick([45, 90]) * Utils.DEG;
+      const R2 = Utils.rand(d.minR, d.maxR), a2 = Utils.rand(20, 60) * Utils.DEG;
       const breather = Math.max(120, d.speed * 0.32);
       this._bTurn(b, R, angle, dir); this._bStraight(b, Utils.rand(breather, breather * 1.3)); this._bTurn(b, R2, a2, -dir);
     } else { this._bTurn(b, R, angle, dir); }

@@ -31,6 +31,32 @@ class Audio_ {
   attach() { this.blip(520, 0.06, 'sine', 0.12); }
   release() { this.blip(760, 0.06, 'sine', 0.10); }
   swingOk() { this.blip(900, 0.07, 'triangle', 0.10); }
+  /** Whooshing rising-then-falling sweep for the 360 world-spin. */
+  vortex() {
+    if (this.muted) return;
+    const ctx = this._ensure(); if (!ctx) return;
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(180, t);
+    o.frequency.exponentialRampToValueAtTime(880, t + 0.5);
+    o.frequency.exponentialRampToValueAtTime(150, t + 1.1);
+    g.gain.setValueAtTime(0.13, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1600;
+    o.connect(f).connect(g).connect(ctx.destination); o.start(); o.stop(t + 1.2);
+  }
+  /** Deep descending whoosh for the 180 reverse-current. */
+  reverseSfx() {
+    if (this.muted) return;
+    const ctx = this._ensure(); if (!ctx) return;
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(680, t);
+    o.frequency.exponentialRampToValueAtTime(160, t + 0.55);
+    g.gain.setValueAtTime(0.14, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
+    o.connect(g).connect(ctx.destination); o.start(); o.stop(t + 0.7);
+  }
   crash() {
     if (this.muted) return;
     const ctx = this._ensure(); if (!ctx) return;
@@ -72,6 +98,14 @@ class GameManager {
     this.gemsRun = 0;       // gems COLLECTED this run
     this.gemItems = [];     // collectible gems floating in the river
     this._nextGemS = 900;   // arc-length of the next gem to spawn
+
+    // Environmental twist-obstacles (purely visual — gameplay unchanged).
+    this.obstacles = [];
+    this._nextObsS = 5200;
+    this.spin = { active: false, t: 0, dur: 2.6 };  // temporary 360 world-spin
+    this.worldRot = 0;                              // eased current rotation
+    this.worldRotTarget = 0;                        // persistent base (reverse flips 0<->PI)
+    this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };  // 180 reverse tween (t=1 = idle)
     this.best = Number(localStorage.getItem('hydroswing_best') || 0);
     this.gems = Number(localStorage.getItem('hydroswing_gems') || 0);
     this.muted = localStorage.getItem('hydroswing_muted') === '1';
@@ -163,6 +197,12 @@ class GameManager {
     this.gemsRun = 0;
     this.gemItems = [];
     this._nextGemS = 900;
+    this.obstacles = [];
+    this._nextObsS = 5200;
+    this.spin.active = false; this.spin.t = 0;
+    this.worldRot = 0; this.worldRotTarget = 0;
+    this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };
+    this.camera.anchorY = 0.62;
     this.introT = null;
     this.held = false;
     this.state = STATE.MENU;
@@ -186,6 +226,12 @@ class GameManager {
     this.gemsRun = 0;
     this.gemItems = [];
     this._nextGemS = 900;
+    this.obstacles = [];
+    this._nextObsS = 5200;
+    this.spin.active = false; this.spin.t = 0;
+    this.worldRot = 0; this.worldRotTarget = 0;
+    this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };
+    this.camera.anchorY = 0.62;
     this.freeze = 0;
     this.held = false;
     this.introT = 0;
@@ -398,7 +444,7 @@ class GameManager {
       const gm = this.gemItems[i];
       gm.bob += dt * 4;
       if (gm.s < activeS - 250) { this.gemItems.splice(i, 1); continue; }   // behind us
-      if (Math.hypot(gm.x - this.player.x, gm.y - this.player.y) < 26) {
+      if (Math.abs(gm.s - activeS) < 300 && Math.hypot(gm.x - this.player.x, gm.y - this.player.y) < 26) {
         this.gemItems.splice(i, 1);
         this.gemsRun++;
         this.audio.blip(1080, 0.09, 'triangle', 0.12);
@@ -407,6 +453,36 @@ class GameManager {
         this.effects.emitFoam(gm.x, gm.y, 0, 4);
       }
     }
+
+    // Twist-obstacles: rare, spawned on the center line. On touch they fire a
+    // purely-visual world rotation — the boat/river/collision never change.
+    while (this._nextObsS < this.river.s - 150 && this._nextObsS < activeS + 4000) {
+      const op = this.river.pointAtS(this._nextObsS);
+      if (op) this.obstacles.push({ x: op.x, y: op.y, s: this._nextObsS, type: Math.random() < 0.5 ? 'spin' : 'reverse', spin: 0 });
+      this._nextObsS += Utils.rand(3200, 5500);   // slightly more frequent
+    }
+    for (let i = this.obstacles.length - 1; i >= 0; i--) {
+      const o = this.obstacles[i];
+      o.spin += dt * 2;
+      if (o.s < activeS - 250) { this.obstacles.splice(i, 1); continue; }
+      // Trigger only when it's on the stretch we're actually on (not a
+      // crossing section that happens to overlap in world space).
+      if (Math.abs(o.s - activeS) < 300 && Math.hypot(o.x - this.player.x, o.y - this.player.y) < 30) {
+        this.obstacles.splice(i, 1);
+        if (o.type === 'spin') this.triggerSpin(o.x, o.y); else this.triggerReverse(o.x, o.y);
+      }
+    }
+
+    // Advance the world-rotation animations (view-only).
+    if (this.spin.active) { this.spin.t += dt; if (this.spin.t >= this.spin.dur) { this.spin.active = false; this.spin.t = 0; } }
+    // Reverse flip: a readable ~1s ease-in-out tween (slow, quick, slow).
+    if (this.rev.t < 1) {
+      this.rev.t = Math.min(1, this.rev.t + dt / this.rev.dur);
+      const k = this.rev.t * this.rev.t * (3 - 2 * this.rev.t);
+      this.worldRot = this.rev.from + (this.rev.to - this.rev.from) * k;
+    }
+    const rotBusy = this.spin.active || this.rev.t < 1 || Math.abs(this.worldRot) > 0.02;
+    this.camera.anchorY = Utils.damp(this.camera.anchorY, rotBusy ? 0.5 : 0.62, 6, dt);
 
     // Trim geometry behind us, then keep the tracked index aligned to
     // the shifted array so both collision and the "active corridor"
@@ -446,6 +522,20 @@ class GameManager {
     const w = window.innerWidth, h = window.innerHeight;
     const isMenu = this.state === STATE.MENU;
 
+    // World-rotation twist effects rotate the ENTIRE scene about the boat's
+    // screen anchor (the boat stays put). Physics/generation are untouched.
+    const th = this._worldAngle();
+    const rotating = Math.abs(th) > 0.0005;
+    if (rotating) {
+      // Fill first so any corner exposed by rotation shows ocean, not black.
+      ctx.fillStyle = '#082438'; ctx.fillRect(0, 0, w, h);
+      const c = Math.abs(Math.cos(th)), s = Math.abs(Math.sin(th));
+      const k = Math.max(c + (h / w) * s, (w / h) * s + c);   // scale so it always covers
+      const px = w / 2, py = h * this.camera.anchorY;
+      ctx.save();
+      ctx.translate(px, py); ctx.rotate(th); ctx.scale(k, k); ctx.translate(-px, -py);
+    }
+
     // Living tropical ocean backdrop (same in menu + gameplay = seamless):
     // depth-shaded water, then seabed props + marine life BEHIND the boat.
     // Static props (seaweed/coral/rocks/etc.) show on the landing only;
@@ -473,6 +563,7 @@ class GameManager {
 
     if (!isMenu) this.river.drawPivots(ctx, this.player.swing.pivot, this._lastS || 0);
     if (!isMenu) this._drawGems(ctx);
+    if (!isMenu) this._drawObstacles(ctx);
 
     if (this.player.alive) {
       if (!isMenu) this.player.drawCable(ctx);
@@ -486,26 +577,136 @@ class GameManager {
     // only on the landing.
     this.env.drawOver(ctx, w, h, isMenu);
 
+    // Close the world-rotation transform (everything above rotated together).
+    if (rotating) ctx.restore();
+
     // Screen-space edge speed blur (ramps in during launch, lingers subtly
     // at high speed).
     this._drawEdgeBlur(ctx, w, h);
   }
 
-  /** Draw the collectible gems floating on the river (world space). */
+  /** Draw the collectible rubies floating on the river (world space).
+   *  Only those on the boat's current stretch — never on a crossing
+   *  section that overlaps the background. */
   _drawGems(ctx) {
-    if (!this.gemItems.length) return;
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '24px sans-serif';
+    const ps = this._lastS || 0;
     for (const gm of this.gemItems) {
+      if (gm.s < ps - 200 || gm.s > ps + 1300) continue;
       const by = Math.sin(gm.bob) * 3;
-      const glow = 0.18 + 0.12 * (0.5 + 0.5 * Math.sin(gm.bob));
-      ctx.fillStyle = `rgba(90, 230, 255, ${glow})`;
-      ctx.beginPath(); ctx.arc(gm.x, gm.y + by, 15, 0, Utils.TWO_PI); ctx.fill();
-      ctx.fillText('💎', gm.x, gm.y + by);
+      Game._drawRuby(ctx, gm.x, gm.y + by, 13, 0.22 + 0.16 * (0.5 + 0.5 * Math.sin(gm.bob)));
     }
+  }
+
+  /** A faceted ruby with glow + shine. Used for the collectibles (and the
+   *  same silhouette matches the HUD icon) — no emoji anywhere. */
+  static _drawRuby(ctx, x, y, r, glow) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (glow > 0) {
+      ctx.fillStyle = `rgba(255, 70, 100, ${glow})`;
+      ctx.beginPath(); ctx.arc(0, 0, r + 8, 0, Utils.TWO_PI); ctx.fill();
+    }
+    // Body
+    ctx.fillStyle = '#d61f43';
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.9, -r * 0.32);
+    ctx.lineTo(r * 0.55, r * 0.95);
+    ctx.lineTo(-r * 0.55, r * 0.95);
+    ctx.lineTo(-r * 0.9, -r * 0.32);
+    ctx.closePath(); ctx.fill();
+    // Top table (lighter)
+    ctx.fillStyle = '#ff5c7a';
+    ctx.beginPath();
+    ctx.moveTo(0, -r); ctx.lineTo(r * 0.9, -r * 0.32); ctx.lineTo(0, -r * 0.05); ctx.lineTo(-r * 0.9, -r * 0.32);
+    ctx.closePath(); ctx.fill();
+    // Lower-left facet shade
+    ctx.fillStyle = 'rgba(120, 10, 30, 0.35)';
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.05); ctx.lineTo(-r * 0.9, -r * 0.32); ctx.lineTo(-r * 0.55, r * 0.95); ctx.closePath(); ctx.fill();
+    // Shine
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.beginPath();
+    ctx.moveTo(-2, -r + 1.5); ctx.lineTo(2.5, -r + 1.5); ctx.lineTo(0, -r * 0.25); ctx.closePath(); ctx.fill();
     ctx.restore();
+  }
+
+  /** Draw the twist-obstacles: a glowing spinning vortex (cyan = 360 spin,
+   *  orange = 180 reverse) so players learn each at a glance. */
+  _drawObstacles(ctx) {
+    const ps = this._lastS || 0;
+    for (const o of this.obstacles) {
+      if (o.s < ps - 200 || o.s > ps + 1300) continue;   // only on the current stretch
+      const spin = o.type === 'spin';
+      const col = spin ? '90,230,255' : '255,150,80';   // cyan = 360 spin, orange = 180 reverse
+      const dir = spin ? 1 : -1;
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      const pulse = 0.22 + 0.12 * (0.5 + 0.5 * Math.sin(o.spin * 2));
+      ctx.fillStyle = `rgba(${col},${pulse})`;
+      ctx.beginPath(); ctx.arc(0, 0, 21, 0, Utils.TWO_PI); ctx.fill();
+      ctx.rotate(o.spin * dir);
+      // Three logarithmic-spiral arms curling into the center.
+      ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (let a = 0; a < 3; a++) {
+        const base = a * (Utils.TWO_PI / 3);
+        ctx.beginPath();
+        for (let t = 0; t <= 1.001; t += 0.12) {
+          const rr = 3.5 + t * 12, ang = base + t * 2.4 * dir;
+          const px = Math.cos(ang) * rr, py = Math.sin(ang) * rr;
+          if (t === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(${col},1)`;
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Utils.TWO_PI); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // -------------------- twist-obstacle effects (view-only) --------------------
+
+  /** Total scene rotation this frame: persistent base + temporary spin. */
+  _worldAngle() {
+    if (!this.spin.active) return this.worldRot;
+    const t = this.spin.t / this.spin.dur;
+    const eased = t * t * (3 - 2 * t);          // smoothstep so it eases in/out
+    return this.worldRot + eased * Utils.TWO_PI;
+  }
+
+  triggerSpin(x, y) {
+    if (this.spin.active) return;
+    this.spin.active = true; this.spin.t = 0;
+    this.camera.addShake(20);
+    this.audio.vortex();
+    this._waterBurst(x, y);
+    this._flashBlur();
+  }
+
+  triggerReverse(x, y) {
+    this.worldRotTarget = this.worldRotTarget === 0 ? Math.PI : 0;  // flip persistent orientation
+    this.rev = { t: 0, dur: 1.0, from: this.worldRot, to: this.worldRotTarget };
+    this.camera.addShake(16);
+    this.audio.reverseSfx();
+    this._waterBurst(x, y);
+    this._flashBlur();
+  }
+
+  _waterBurst(x, y) {
+    this.effects.emitFoam(x, y, 0, 14);
+    for (let a = 0; a < 6; a++) {
+      const ang = (a / 6) * Utils.TWO_PI;
+      this.effects.emitSpray(x, y, Math.cos(ang), Math.sin(ang), 0, 1.3);
+    }
+    this.effects.ripples.push({ x, y, r: 5, life: 1 });
+    this.effects.ripples.push({ x, y, r: 20, life: 1 });
+  }
+
+  /** Quick CSS blur flash on the canvas (fraction of a second). */
+  _flashBlur() {
+    this.canvas.classList.add('rot-flash');
+    clearTimeout(this._blurT);
+    this._blurT = setTimeout(() => this.canvas.classList.remove('rot-flash'), 170);
   }
 
   /** Darkened, motion-blurred screen edges — energy of speed. Ramps in
