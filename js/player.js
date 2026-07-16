@@ -57,13 +57,13 @@ class PlayerController {
    * @param pivots    candidate pivots from the river
    * @param currentS  boat's current arc-length position on the river
    */
-  update(dt, held, pivots, currentS, riverTangent) {
+  update(dt, held, pivots, currentS, riverTangent, preferredPost) {
     const wasSwinging = this.swing.swinging;
 
     // --- Input edge handling: attach on press, release on let-go. ---
     if (held && !this.swing.attached) {
       const target = this.swing.findTarget(
-        this.x, this.y, this.heading, pivots, this.grabRange, currentS
+        this.x, this.y, this.heading, pivots, this.grabRange, currentS, preferredPost
       );
       if (target) this.swing.attach(this.x, this.y, this.heading, this.speed, target);
     } else if (!held && this.swing.attached) {

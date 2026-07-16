@@ -46,7 +46,15 @@ class SwingSystem {
    *
    * @param currentS  the boat's current arc-length position on the river
    */
-  findTarget(x, y, heading, pivots, maxRange, currentS) {
+  findTarget(x, y, heading, pivots, maxRange, currentS, preferred) {
+    // At a fork the branch peel post is PREFERRED: while you're near it and
+    // holding, hook it (not the nearest main post) so "hold = take the
+    // branch" is reliable. Given a generous approach window.
+    if (preferred && !preferred.cleared && currentS < preferred.endS &&
+        currentS >= preferred.startS - 220 &&
+        Math.hypot(preferred.x - x, preferred.y - y) <= maxRange) {
+      return preferred;
+    }
     const LOOKAHEAD = 900; // how far up the track we'll hook a post from
     let best = null, bestD = Infinity;
     for (const p of pivots) {

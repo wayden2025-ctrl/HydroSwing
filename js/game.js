@@ -441,7 +441,8 @@ class GameManager {
 
     // Feed the boat its current track position + the river's forward
     // tangent here (so it can straighten to the river after a swing).
-    this.player.update(dt, this.held, this.river.activePivots(), this._lastS || 0, this._lastTangent);
+    this.player.update(dt, this.held, this.river.activePivots(), this._lastS || 0, this._lastTangent,
+      this.river.split ? this.river.split.branchPivot : null);
 
     // SFX: soft click when the leash hooks, firmer note when the swing
     // actually bites, a light note on release.
@@ -489,7 +490,7 @@ class GameManager {
         const nl = this.boundary.locate(this.player.x, this.player.y);
         activeOffset = nl.offset; activeS = nl.s; activeTangent = nl.tangent;
         crashed = false;
-        this._commitGrace = 0.5;               // let the swing settle onto the branch
+        this._commitGrace = 1.1;               // cover the full 90 branch swing
       } else if (!onBranchPost && (loc.s > sp.forkS + 340 || forceOld)) {
         this.river._commitToMain();
         activeOffset = loc.offset; activeS = loc.s; activeTangent = loc.tangent;
