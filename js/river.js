@@ -193,6 +193,7 @@ class RiverGenerator {
   // ============================================================
 
   _maybeStartSplit() {
+    return;                                                    // branching disabled — one river only
     if (this.split || this.ghost) return;                      // one fork at a time
     if (this.s < 2600) return;                                 // let players settle first
     // Distance-based, jittered spacing so forks feel irregular/organic.

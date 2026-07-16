@@ -456,29 +456,23 @@ class GameManager {
     const hw = this.river.halfWidth, r = this.player.radius;
     let activeOffset = loc.offset, activeS = loc.s, activeTangent = loc.tangent;
     let crashed = this.boundary.isCrashed(loc.offset, r);
-    // Only engage the fork logic when the boat is actually near the fork
-    // (it's generated ~5000px ahead, long before the boat reaches it).
-    // Only engage the fork's commit/collision logic once the boat is actually
-    // APPROACHING it. Forks are generated ~5000px ahead; running the commit
-    // timer from creation made every fork auto-commit long before the boat
-    // arrived (so the branch was gone by the time you got there).
+
+    // A fork is a NO-CRASH zone: from the moment you approach it until you're
+    // clearly committed to a lane, NOTHING can wall you off. You just choose —
+    // go straight (stay on main) or swing the branch post (take the branch).
+    let forkZone = false;
     if (this.river.split && loc.s > this.river.split.forkS - 800) {
+      forkZone = true;
       const sp = this.river.split;
-      this._widenForkS = sp.forkS;      // drives the fork width dip (persists after commit)
+      this._widenForkS = sp.forkS;
       const sw = this.player.swing;
       const onBranchPost = sw.pivot === sp.branchPivot;
       const lb = this.river.locateBranch(this.player.x, this.player.y);
       sp.age = (sp.age || 0) + 1;
+      const forceOld = sp.age > 300;   // ~5s hard safety
 
-      // Hard safety: no fork may ever stay open more than ~4s — commit to
-      // whichever lane the boat is actually nearest and move on.
-      const forceOld = sp.age > 240;
-
-      // Commit triggers:
-      //   BRANCH — you're swinging the branch post, or you're clearly INSIDE
-      //            the branch and OUTSIDE the main (unambiguously on it).
-      //   MAIN   — you're past the fork AND not hooked to the branch post
-      //            (so we never yank you off a branch swing you're setting up).
+      // Commit to BRANCH once you're swinging its post or clearly on it;
+      // to MAIN once you're past the fork and NOT hooked to the branch post.
       const clearlyOnBranch = lb.s > sp.forkS + 300 &&
         Math.abs(lb.offset) < hw && Math.abs(loc.offset) > hw;
       const tookBranch = (sw.swinging && onBranchPost) || clearlyOnBranch ||
@@ -489,31 +483,23 @@ class GameManager {
         this.boundary.reindex(this.player.x, this.player.y);   // full scan -> no teleport
         const nl = this.boundary.locate(this.player.x, this.player.y);
         activeOffset = nl.offset; activeS = nl.s; activeTangent = nl.tangent;
-        crashed = false;
-        this._commitGrace = 1.1;               // cover the full 90 branch swing
+        this._commitGrace = 1.2;               // cover the full branch swing
       } else if (!onBranchPost && (loc.s > sp.forkS + 340 || forceOld)) {
         this.river._commitToMain();
         activeOffset = loc.offset; activeS = loc.s; activeTangent = loc.tangent;
-        crashed = Math.abs(loc.offset) > hw - r;
+        this._commitGrace = 0.5;
       } else {
-        // Undecided throat (or hooked to the branch post, about to swing):
-        // track whichever channel you're nearer with a very forgiving crash
-        // test — while choosing/crossing, NEITHER bank may block you.
+        // Still choosing / crossing: track whichever channel is nearer.
         const nearBranch = Math.abs(lb.offset) < Math.abs(loc.offset);
         activeOffset = nearBranch ? lb.offset : loc.offset;
         activeS = nearBranch ? lb.s : loc.s;
         activeTangent = nearBranch ? lb.tangent : loc.tangent;
-        const buf = hw * 1.6;
-        crashed = Math.abs(loc.offset) > buf && Math.abs(lb.offset) > buf;
       }
     }
 
-    // Brief grace right after a commit so a slightly-off branch swing can
-    // settle onto the centerline without dying on a phantom bank.
-    if (this._commitGrace > 0) {
-      this._commitGrace -= dt;
-      if (Math.abs(activeOffset) < hw * 1.5) crashed = false;
-    }
+    // No crashing while at a fork, nor during the brief settle after a commit.
+    if (this._commitGrace > 0) this._commitGrace -= dt;
+    if (forkZone || this._commitGrace > 0) crashed = false;
     // Fade the not-taken ghost path out once it's off-screen.
     this.river.updateGhost(this.camera.x, this.camera.y);
 
