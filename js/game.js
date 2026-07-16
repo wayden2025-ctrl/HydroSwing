@@ -106,6 +106,7 @@ class GameManager {
     this.worldRot = 0;                              // eased current rotation
     this.worldRotTarget = 0;                        // persistent base (reverse flips 0<->PI)
     this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };  // 180 reverse tween (t=1 = idle)
+    this.zoomFx = { active: false, t: 0, dur: 3.2 }; // "zoom bomb" — camera pulls way out
     this.best = Number(localStorage.getItem('hydroswing_best') || 0);
     this.gems = Number(localStorage.getItem('hydroswing_gems') || 0);
     this.muted = localStorage.getItem('hydroswing_muted') === '1';
@@ -210,6 +211,7 @@ class GameManager {
     this.spin.active = false; this.spin.t = 0;
     this.worldRot = 0; this.worldRotTarget = 0;
     this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };
+    this.zoomFx = { active: false, t: 0, dur: 3.2 };
     this.redirect = { active: false, t: 0, dur: 0 };
     this._commitGrace = 0;
     this.camera.anchorY = 0.62;
@@ -256,6 +258,7 @@ class GameManager {
     this.spin.active = false; this.spin.t = 0;
     this.worldRot = 0; this.worldRotTarget = 0;
     this.rev = { t: 1, dur: 1.0, from: 0, to: 0 };
+    this.zoomFx = { active: false, t: 0, dur: 3.2 };
     this.camera.anchorY = 0.62;
     this.freeze = 0;
     this.held = false;
@@ -413,7 +416,7 @@ class GameManager {
     const introK = this.introT === null ? 1 : this.introT;
     const accel = introK * introK * (3 - 2 * introK);   // smoothstep 0..1
     this._introK = introK;
-    this.camera.zoom = Utils.lerp(this.MENU_ZOOM, this.PLAY_ZOOM, accel);
+    this.camera.zoom = Utils.lerp(this.MENU_ZOOM, this.PLAY_ZOOM, accel) * this._zoomFxFactor(dt);
 
     const d0 = this._lastS || 0;
     // Speed ramps up from a standstill during the launch (boat accelerates).
@@ -559,7 +562,7 @@ class GameManager {
     // purely-visual world rotation — the boat/river/collision never change.
     while (this._nextObsS < this.river.s - 150 && this._nextObsS < activeS + 4000) {
       const op = this.river.pointAtS(this._nextObsS);
-      if (op) this.obstacles.push({ x: op.x, y: op.y, s: this._nextObsS, type: Math.random() < 0.5 ? 'spin' : 'reverse', spin: 0 });
+      if (op) this.obstacles.push({ x: op.x, y: op.y, s: this._nextObsS, type: Utils.pick(['spin', 'reverse', 'zoom']), spin: 0 });
       this._nextObsS += Utils.rand(2200, 3600);   // more frequent twist objects
     }
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
@@ -570,7 +573,9 @@ class GameManager {
       // crossing section that happens to overlap in world space).
       if (Math.abs(o.s - activeS) < 300 && Math.hypot(o.x - this.player.x, o.y - this.player.y) < 30) {
         this.obstacles.splice(i, 1);
-        if (o.type === 'spin') this.triggerSpin(o.x, o.y); else this.triggerReverse(o.x, o.y);
+        if (o.type === 'spin') this.triggerSpin(o.x, o.y);
+        else if (o.type === 'reverse') this.triggerReverse(o.x, o.y);
+        else this.triggerZoom(o.x, o.y);
       }
     }
 
@@ -738,26 +743,45 @@ class GameManager {
     const ps = this._lastS || 0;
     for (const o of this.obstacles) {
       if (o.s < ps - 200 || o.s > ps + 1300) continue;   // only on the current stretch
-      const spin = o.type === 'spin';
-      const col = spin ? '90,230,255' : '255,150,80';   // cyan = 360 spin, orange = 180 reverse
-      const dir = spin ? 1 : -1;
+      // cyan = 360 spin, orange = 180 reverse, purple = zoom-out bomb
+      const col = o.type === 'spin' ? '90,230,255' : o.type === 'reverse' ? '255,150,80' : '190,130,255';
       ctx.save();
       ctx.translate(o.x, o.y);
       const pulse = 0.22 + 0.12 * (0.5 + 0.5 * Math.sin(o.spin * 2));
       ctx.fillStyle = `rgba(${col},${pulse})`;
       ctx.beginPath(); ctx.arc(0, 0, 21, 0, Utils.TWO_PI); ctx.fill();
-      ctx.rotate(o.spin * dir);
-      // Three logarithmic-spiral arms curling into the center.
-      ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 3; ctx.lineCap = 'round';
-      for (let a = 0; a < 3; a++) {
-        const base = a * (Utils.TWO_PI / 3);
-        ctx.beginPath();
-        for (let t = 0; t <= 1.001; t += 0.12) {
-          const rr = 3.5 + t * 12, ang = base + t * 2.4 * dir;
-          const px = Math.cos(ang) * rr, py = Math.sin(ang) * rr;
-          if (t === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+
+      if (o.type === 'zoom') {
+        // Concentric rings pulsing OUTWARD — reads as "zoom out".
+        ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 2.6;
+        for (let k = 0; k < 3; k++) {
+          const rr = 4 + ((o.spin * 8 + k * 6) % 16);
+          ctx.globalAlpha = 1 - rr / 20;
+          ctx.beginPath(); ctx.arc(0, 0, rr, 0, Utils.TWO_PI); ctx.stroke();
         }
-        ctx.stroke();
+        ctx.globalAlpha = 1;
+        // outward arrow ticks
+        ctx.lineWidth = 3; ctx.lineCap = 'round';
+        for (let a = 0; a < 4; a++) {
+          const ang = a * (Utils.TWO_PI / 4) + o.spin * 0.5;
+          const cx = Math.cos(ang), cy = Math.sin(ang);
+          ctx.beginPath(); ctx.moveTo(cx * 9, cy * 9); ctx.lineTo(cx * 15, cy * 15); ctx.stroke();
+        }
+      } else {
+        // Three logarithmic-spiral arms curling into the center.
+        const dir = o.type === 'spin' ? 1 : -1;
+        ctx.rotate(o.spin * dir);
+        ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 3; ctx.lineCap = 'round';
+        for (let a = 0; a < 3; a++) {
+          const base = a * (Utils.TWO_PI / 3);
+          ctx.beginPath();
+          for (let t = 0; t <= 1.001; t += 0.12) {
+            const rr = 3.5 + t * 12, ang = base + t * 2.4 * dir;
+            const px = Math.cos(ang) * rr, py = Math.sin(ang) * rr;
+            if (t === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+        }
       }
       ctx.fillStyle = `rgba(${col},1)`;
       ctx.beginPath(); ctx.arc(0, 0, 3, 0, Utils.TWO_PI); ctx.fill();
@@ -791,6 +815,30 @@ class GameManager {
     this.audio.reverseSfx();
     this._waterBurst(x, y);
     this._flashBlur();
+  }
+
+  /** Zoom bomb: the camera pulls WAY out for a few seconds (you can barely
+   *  see the boat), then eases back. Gameplay is unchanged. */
+  triggerZoom(x, y) {
+    if (this.zoomFx.active) return;
+    this.zoomFx = { active: true, t: 0, dur: 3.4 };
+    this.camera.addShake(12);
+    this.audio.reverseSfx();
+    this._waterBurst(x, y);
+    this._flashBlur();
+  }
+
+  /** Camera zoom multiplier for the zoom-bomb: 1 -> ~0.2 (way out) -> 1. */
+  _zoomFxFactor(dt) {
+    const z = this.zoomFx;
+    if (!z || !z.active) return 1;
+    z.t += dt;
+    if (z.t >= z.dur) { z.active = false; z.t = 0; return 1; }
+    const p = z.t / z.dur, sm = (t) => { t = Utils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+    const MIN = 0.2;                                   // pull far enough that you can barely see
+    if (p < 0.22) return Utils.lerp(1, MIN, sm(p / 0.22));      // zoom out
+    if (p < 0.66) return MIN;                                   // hold way out
+    return Utils.lerp(MIN, 1, sm((p - 0.66) / 0.34));           // ease back in
   }
 
   _waterBurst(x, y) {
